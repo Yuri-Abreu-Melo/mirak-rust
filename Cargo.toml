@@ -1,0 +1,43 @@
+[package]
+name = "mirak"
+version = "0.1.0"
+edition = "2024"
+
+[profile]
+dev.panic = "abort"
+release.panic = "abort"
+
+[dependencies]
+# Wraps up some C library calls to ensure safety and reduce complexity, making code easy to read
+nix = { version = "0.31.2", features = ["fs"] }
+
+# Ergonomic way to get users information with the ID
+users = "0.11.0"
+
+# Powering rust to make some string manipulations with regex
+regex = "1.11.1"
+
+# The kit to make http request asynchronously
+reqwest = { version = "0.13", features = ["json"] }
+tokio = { version = "1", features = ["full"] }
+serde_json = "1.0.142"
+toml = "1.1"
+csv = "1.3.1"
+
+# Progress bar :)
+indicatif = { version = "0.18.0", features = ["rayon"] }
+rayon = "1.10.0"
+
+clap = { version = "4.5.45", features = ["derive"] }
+gtk = { version = "0.11.2", package = "gtk4", features = [
+  "v4_20",
+], optional = true }
+colored = "3.1.1"
+serde = { version = "1.0.228", features = ["derive"] }
+
+[features]
+gui = ["dep:gtk"]
+
+[dependencies.openssl]
+version = "0.10"
+features = ["vendored"]

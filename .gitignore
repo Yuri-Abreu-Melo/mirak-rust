@@ -1,0 +1,4 @@
+/target
+.vagrant/
+vagrant-VM's/*/mirak-app/*
+!vagrant-VM's/*/mirak-app/.gitkeep
