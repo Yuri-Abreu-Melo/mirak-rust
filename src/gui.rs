@@ -119,22 +119,23 @@ pub fn build_ui(app: &Application) {
             let log_ui = Rc::new(RefCell::new(log_ui));
             let rx = Rc::new(RefCell::new(rx));
 
-            glib::idle_add_local(move || {
+            glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
                 let mut rx = rx.borrow_mut();
+                let mut count = 0;
 
-                for _ in 0..10 {
-                    match rx.try_recv() {
-                        Ok(msg) => {
-                            (log_ui.borrow())(&msg);
-                        }
-                        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
-                        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
-                            return glib::ControlFlow::Break;
-                        }
+                while let Ok(msg) = rx.try_recv() {
+                    (log_ui.borrow())(&msg);
+                    count += 1;
+                    if count >= 20 {
+                        break;
                     }
                 }
 
-                glib::ControlFlow::Continue
+                if rx.is_closed() && count == 0 {
+                    glib::ControlFlow::Break
+                } else {
+                    glib::ControlFlow::Continue
+                }
             });
         }
     });
