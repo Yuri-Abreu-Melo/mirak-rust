@@ -33,7 +33,6 @@ fn matches_cpe(cpe_pattern: &str, cpe_to_check: &str) -> bool {
     true
 }
 
-/// Versão GUI - escreve via canal
 #[cfg(feature = "gui")]
 pub async fn check_vulnerabilities_gui(
     cpes: Vec<String>,
@@ -47,7 +46,7 @@ pub async fn check_vulnerabilities_gui(
     let total_cpes = cpes.len();
     sender
         .send(format!(
-            "🔍 Verificando vulnerabilidades para {} CPEs...\n",
+            "🔍 Check for vulnerabilities for {} CPEs...\n",
             total_cpes
         ))
         .ok();
@@ -57,7 +56,6 @@ pub async fn check_vulnerabilities_gui(
             check_vulnerabilities_for_cpe_gui(os_cpe.as_str(), cpe.as_str(), key, sender.clone())
                 .await;
 
-        // Mescla as vulnerabilidades encontradas
         for (cve_id, cve_data_list) in vuln_map {
             all_vulnerabilities
                 .entry(cve_id)
@@ -67,7 +65,7 @@ pub async fn check_vulnerabilities_gui(
 
         sender
             .send(format!(
-                "📦 Progresso: {}/{} CPEs processados\n",
+                "📦 Progress: {}/{} CPEs checked\n",
                 index + 1,
                 total_cpes
             ))
@@ -76,12 +74,11 @@ pub async fn check_vulnerabilities_gui(
     }
 
     sender
-        .send("✅ Verificação de vulnerabilidades concluída!\n".to_string())
+        .send("✅ Vulnerabilities scan finished!\n".to_string())
         .ok();
     (all_vulnerabilities, issues)
 }
 
-/// Versão GUI da função principal
 #[cfg(feature = "gui")]
 pub async fn check_gui(
     cpes: Vec<String>,
@@ -92,13 +89,11 @@ pub async fn check_gui(
     let mut final_issues: HashMap<String, i64> = HashMap::new();
 
     sender
-        .send("🔑 Validando chave da API NVD...\n".to_string())
+        .send("🔑 Validanting NVD API KEY...\n".to_string())
         .ok();
 
     if looks_like_nvd_api_key(key.as_str()) {
-        sender
-            .send("🔍  Lendo arquivo cpes.mirak \n".to_string())
-            .ok();
+        sender.send("🔍  Reading cpes.mirak \n".to_string()).ok();
         let os_cpe = cpes.first().unwrap().to_owned();
         let (vulnerabilities, issues) =
             check_vulnerabilities_gui(cpes, os_cpe.to_string(), &key, sender.clone()).await;
@@ -116,9 +111,7 @@ pub async fn check_gui(
             }
         }
     } else {
-        sender
-            .send("⚠️ Chave da API NVD inválida!\n".to_string())
-            .ok();
+        sender.send("⚠️Invalid NVD API KEY!\n".to_string()).ok();
     }
 
     let total: i64 = final_issues.values().sum();
@@ -144,7 +137,6 @@ pub async fn check_gui(
     all_vulnerabilities
 }
 
-/// Versão GUI da função de verificação por CPE
 #[cfg(feature = "gui")]
 async fn check_vulnerabilities_for_cpe_gui(
     _os_cpe: &str,
@@ -153,7 +145,7 @@ async fn check_vulnerabilities_for_cpe_gui(
     sender: mpsc::UnboundedSender<String>,
 ) -> (HashMap<String, Vec<CVEDataReport>>, String, i64) {
     sender
-        .send(format!("🔎 Consultando NVD para CPE: {}\n", cpe))
+        .send(format!("🔎 Searching NVD for CPE: {}\n", cpe))
         .ok();
 
     // Get the informations about the given CPE
@@ -163,7 +155,6 @@ async fn check_vulnerabilities_for_cpe_gui(
     let mut issue_source = String::from("");
     let mut issues_qtd = 0;
 
-    // Extrai vendor e product do CPE
     let cpe_parts: Vec<&str> = cpe.split(':').collect();
     let vendor = cpe_parts.get(3).unwrap_or(&"unknown").to_string();
     let product_name = cpe_parts.get(4).unwrap_or(&"unknown").to_string();
@@ -175,7 +166,7 @@ async fn check_vulnerabilities_for_cpe_gui(
 
         sender
             .send(format!(
-                "🐛 Encontradas {} vulnerabilidades para {}\n",
+                "🐛 Found {} vulnerabilities for {}\n",
                 result.total_results, product_name
             ))
             .ok();
@@ -292,7 +283,7 @@ async fn check_vulnerabilities_for_cpe_gui(
 
         sender
             .send(format!(
-                "✅ Processadas {} CVEs para {}\n",
+                "✅ Processed {} CVEs for {}\n",
                 vulnerabilities.len(),
                 product_name
             ))
@@ -300,7 +291,7 @@ async fn check_vulnerabilities_for_cpe_gui(
     } else {
         sender
             .send(format!(
-                "ℹ️ Nenhuma vulnerabilidade encontrada para {}\n",
+                "ℹ️ Zero vulnerabilities found for {}\n",
                 product_name
             ))
             .ok();
