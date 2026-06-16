@@ -63,7 +63,7 @@ pub async fn check(cpes: Vec<String>, key: String) -> HashMap<String, Vec<CVEDat
     let mut final_issues: HashMap<String, i64> = HashMap::new();
 
     if looks_like_nvd_api_key(key.as_str()) {
-        println!("[INFO] - Lendo arquivo cpes.mirak");
+        println!("[INFO] - Reading cpes.mirak");
         let os_cpe = cpes.first().unwrap().to_owned();
         let (vulnerabilities, issues) = check_vulnerabilities(cpes, os_cpe.to_string(), &key).await;
 

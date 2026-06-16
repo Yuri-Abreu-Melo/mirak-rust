@@ -54,7 +54,7 @@ pub fn build_cpe() -> Vec<String> {
         ));
     }
     write_cpes_to_file(&cpes, "cpes.mirak").unwrap();
-    println!("[INFO] - Salvando os CPES no arquivo cpes.mirak",);
+    println!("[INFO] - Saving the CPES on cpes.mirak",);
     cpes
 }
 
