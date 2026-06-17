@@ -21,7 +21,10 @@ pub fn validate_gui() -> String {
         reports.push_str(&validate_config());
         output.push_str(&reports);
     } else {
-        output.push_str("[ERROR] - Routinator not installed\n");
+        output.push_str(&format!(
+            "{}\n",
+            "❌ ERROR: Routinator not installed".bright_red().bold()
+        ));
     }
 
     output
@@ -42,7 +45,12 @@ pub fn validate() {
         reports.push_str(validate_config().as_str());
         println!("{reports}");
     } else {
-        println!("{}", "[ERROR] - Routinator not installed".red());
+        println!(
+            "{}",
+            "❌ ERROR: Routinator not installed. Please install it to continue."
+                .bright_red()
+                .bold()
+        );
     }
 }
 
@@ -55,22 +63,52 @@ fn validate_config() -> String {
         PathBuf::from("/etc/routinator/routinator.conf"),
         PathBuf::from(format!("{}/.routinator.conf", home_dir)),
     ];
+
     for path in paths {
         if path.exists() {
             match fs::read_to_string(&path) {
                 Ok(file) => match toml::from_str::<Config>(&file) {
-                    Ok(_) => reports.push_str(format!("{}", "[INFO] - Config validated".bright_green()).as_str()),
-                    Err(err) => reports
-                        .push_str(format!("{} {}", "[WARN] -Invalid config file: \n".bright_yellow(), err.message().red()).as_str()),
+                    Ok(_) => reports.push_str(
+                        format!(
+                            "  ✅ Config file '{}' validated successfully\n",
+                            path.display()
+                        )
+                        .bright_green()
+                        .to_string()
+                        .as_str(),
+                    ),
+                    Err(err) => reports.push_str(
+                        format!(
+                            "  ⚠️  Invalid config file '{}': {}\n",
+                            path.display(),
+                            err.message().bright_red()
+                        )
+                        .bright_yellow()
+                        .to_string()
+                        .as_str(),
+                    ),
                 },
-                Err(err) => {
-                    reports.push_str(format!("{} {err}", "[WARN] - Could not open config file: \n".bright_yellow()).as_str())
-                }
+                Err(err) => reports.push_str(
+                    format!(
+                        "  ⚠️  Could not open config file '{}': {}\n",
+                        path.display(),
+                        err.to_string().bright_red()
+                    )
+                    .bright_yellow()
+                    .to_string()
+                    .as_str(),
+                ),
             }
         }
     }
+
     if reports.is_empty() {
-        reports.push_str(&"[WARN] - Routinator config file not found".bright_yellow().to_string());
+        reports.push_str(
+            "⚠️Routinator config file not found in standard locations\n"
+                .bright_yellow()
+                .to_string()
+                .as_str(),
+        );
     }
     reports
 }
@@ -85,14 +123,30 @@ fn check_routinator_files() -> Result<String, String> {
     ];
     let access_modes = extractors::os::get_files_access_mode(paths);
 
-    for (_, mode) in access_modes {
-        if !mode.permission == 0o644 {
+    let mut result = String::from("📁 Checking Routinator configuration files:\n");
+
+    for (path, mode) in access_modes {
+        if mode.permission != 0o644 {
             return Err(format!(
-                "{} {:o}", "[WARN] - Expected routinator.conf to have 644 as permission, got: \n".bright_yellow(),
+                "  ⚠️  File '{}' has incorrect permissions: {:o} (expected 644)\n",
+                path.to_string().bright_white(),
                 mode.permission
-            ));
+            )
+            .bright_yellow()
+            .to_string());
+        } else {
+            result.push_str(
+                format!(
+                    "  ✅ File '{}' has correct permissions: {:o}\n",
+                    path.to_string().bright_white(),
+                    mode.permission
+                )
+                .bright_green()
+                .to_string()
+                .as_str(),
+            );
         }
     }
 
-    Ok("[INFO] - Routinator config files permissions validated\n".bright_green().to_string())
+    Ok(result)
 }

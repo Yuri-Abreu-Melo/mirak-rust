@@ -20,41 +20,130 @@ fn write_cpes_to_file(cpes: &[String], filename: &str) -> std::io::Result<()> {
 
 /// Create the cpes for apps instaled and the OS
 pub fn build_cpe() -> Vec<String> {
+    println!("\n{}", "═══════════════════════════════════════════".bright_magenta());
+    println!("{}", "📦 BUILDING CPEs FOR SYSTEM SCAN".bright_magenta().bold());
+    println!("{}", "═══════════════════════════════════════════".bright_magenta());
+
+    println!("{}", "🔍 Detecting package manager...".bright_blue());
     let pkg_manager = PackageManager::detect_package_manager();
+    
     assert!(
-        pkg_manager.is_some(), "{}",
-        "[ERROR] - This version of mirak only works in OS where DNF or APT or APK package managers are used".red()
+        pkg_manager.is_some(), 
+        "{}", 
+        "❌ ERROR: This version of MIRAK only works on systems using DNF, APT, or APK package managers"
+            .bright_red()
+            .bold()
     );
+    
+    let manager_name = match pkg_manager.unwrap() {
+        PackageManager::Dnf => "DNF",
+        PackageManager::Apt => "APT",
+        PackageManager::Apk => "APK",
+    };
+    println!(
+        "{} {}",
+        "✅ Package manager detected:".bright_green(),
+        manager_name.bright_yellow().bold()
+    );
+
+    println!("{}", "📋 Fetching installed packages...".bright_blue());
     let packages = find_installed_apps(pkg_manager.unwrap());
+    
     assert!(
         packages.is_some(),
         "{}",
-        "[ERROR] - If there are no packages installed, then there is nothing to be checked".red()
+        "❌ ERROR: No packages found to scan. Please ensure packages are installed."
+            .bright_red()
+            .bold()
     );
+
+    let package_count = packages.as_ref().unwrap().len();
+    println!(
+        "{} {} {}",
+        "✅ Found".bright_green(),
+        package_count.to_string().bright_yellow().bold(),
+        "installed packages".bright_green()
+    );
+
+    println!("{}", "🖥️  Detecting OS information...".bright_blue());
     let mut cpes: Vec<String> = Vec::new();
     let os_release = os::extract_os_release_info();
+    
     // Create the OS cpe
-    if os_release.get("ID").unwrap().to_lowercase().eq("ubuntu") {
+    let os_id = os_release.get("ID").unwrap();
+    let os_version = os_release.get("VERSION_ID").unwrap();
+    
+    println!(
+        "{} {} {}",
+        "✅ OS detected:".bright_green(),
+        os_id.bright_cyan(),
+        format!("(version {})", os_version).bright_white()
+    );
+
+    if os_id.to_lowercase().eq("ubuntu") {
         cpes.push(format!(
             "cpe:2.3:o:canonical:{}:{}:*:*:*:*:*:*:*",
-            os_release.get("ID").unwrap().as_str().to_owned() + "_linux",
-            os_release.get("VERSION_ID").unwrap(),
+            os_id.to_owned() + "_linux",
+            os_version,
         ));
     } else {
         cpes.push(format!(
             "cpe:2.3:o:fedoraproject:{}:{}:*:*:*:*:*:*:*",
-            os_release.get("ID").unwrap(),
-            os_release.get("VERSION_ID").unwrap(),
+            os_id,
+            os_version,
         ));
     }
+
+    println!("{}", "🔨 Generating CPEs for packages...".bright_blue());
+    let mut cpe_count = 0;
     for package in packages.unwrap() {
         cpes.push(format!(
             "cpe:2.3:a:{}:{}:{}:*:*:*:*:*:*:*",
             package.distributor, package.name, package.version
         ));
+        cpe_count += 1;
+        
+        // Mostrar progresso a cada 100 CPEs gerados
+        if cpe_count % 100 == 0 {
+            print!("\r  📊 Progress: {} CPEs generated", cpe_count.to_string().bright_yellow());
+        }
     }
-    write_cpes_to_file(&cpes, "cpes.mirak").unwrap();
-    println!("[INFO] - Saving the CPES on cpes.mirak",);
+    
+    if cpe_count > 100 {
+        println!(); // Nova linha após o progresso
+    }
+    
+    println!(
+        "{} {} {}",
+        "✅ Generated".bright_green(),
+        cpe_count.to_string().bright_yellow().bold(),
+        "CPEs".bright_green()
+    );
+
+    println!("{}", "💾 Saving CPEs to file...".bright_blue());
+    match write_cpes_to_file(&cpes, "cpes.mirak") {
+        Ok(_) => {
+            println!(
+                "{} {}",
+                "✅ CPEs saved successfully to".bright_green(),
+                "cpes.mirak".bright_white().bold()
+            );
+        }
+        Err(err) => {
+            eprintln!(
+                "{} {}",
+                "⚠️  Warning: Could not save CPEs to file:".bright_yellow(),
+                err.to_string().bright_red()
+            );
+        }
+    }
+
+    println!(
+        "\n{}",
+        "✅ CPE build completed successfully!".bright_green().bold()
+    );
+    println!("{}\n", "═══════════════════════════════════════════".bright_magenta());
+
     cpes
 }
 
@@ -63,12 +152,17 @@ pub fn build_cpe_gui() -> Vec<String> {
     let pkg_manager = PackageManager::detect_package_manager();
     if pkg_manager.is_none() {
         panic!(
-            "{}", "[ERROR] - This version of mirak only works in OS where DNF or APT or APK package managers are used".red()
+            "{}", 
+            "❌ ERROR: This version of MIRAK only works on systems using DNF, APT, or APK package managers"
+                .bright_red()
+                .bold()
         );
     }
+    
     let packages = find_installed_apps(pkg_manager.unwrap());
     let mut cpes: Vec<String> = Vec::new();
     let os_release = os::extract_os_release_info();
+    
     // Create the OS cpe
     if os_release.get("ID").unwrap().to_lowercase().eq("ubuntu") {
         cpes.push(format!(
@@ -83,16 +177,16 @@ pub fn build_cpe_gui() -> Vec<String> {
             os_release.get("VERSION_ID").unwrap(),
         ));
     }
+    
     for package in packages.unwrap() {
         cpes.push(format!(
             "cpe:2.3:a:{}:{}:{}:*:*:*:*:*:*:*",
             package.distributor, package.name, package.version
         ));
     }
-    // text_buffer.insert(
-    //     &mut text_buffer.end_iter(),
-    //     "✅ Salvando os CPES no arquivo cpes.mirak \n",
-    // );
-    write_cpes_to_file(&cpes, "cpes.mirak").unwrap();
+    
+    // Salvar CPEs em arquivo (silenciosamente na GUI)
+    let _ = write_cpes_to_file(&cpes, "cpes.mirak");
+    
     cpes
 }

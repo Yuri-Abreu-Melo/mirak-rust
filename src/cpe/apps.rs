@@ -1,8 +1,8 @@
+use colored::*;
 use regex::Regex;
 use std::process::Command;
-use colored::*;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum PackageManager {
     Apt,
     Dnf,
@@ -44,7 +44,10 @@ fn find_routinator_by_cargo(packages: &mut Vec<PackageInfo>) {
 }
 
 pub fn find_installed_apps(pkg_manager: PackageManager) -> Option<Vec<PackageInfo>> {
-    println!("{}", "[INFO] - Searching for system packages \n".bright_green());
+    println!(
+        "{}",
+        "[INFO] - Searching for system packages \n".bright_green()
+    );
     let output = match pkg_manager {
         PackageManager::Apt => Command::new("dpkg-query")
             .args([

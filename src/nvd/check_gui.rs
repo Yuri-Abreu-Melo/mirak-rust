@@ -46,8 +46,10 @@ pub async fn check_vulnerabilities_gui(
     let total_cpes = cpes.len();
     sender
         .send(format!(
-            "🔍 Check for vulnerabilities for {} CPEs...\n",
-            total_cpes
+            "{}",
+            format!("🔍 Check for vulnerabilities for {} CPEs...\n", total_cpes)
+                .bright_blue()
+                .bold()
         ))
         .ok();
 
@@ -65,16 +67,18 @@ pub async fn check_vulnerabilities_gui(
 
         sender
             .send(format!(
-                "📦 Progress: {}/{} CPEs checked\n",
-                index + 1,
-                total_cpes
+                "{}",
+                format!("📦 Progress: {}/{} CPEs checked\n", index + 1, total_cpes).bright_cyan()
             ))
             .ok();
         issues.entry(issue_source).or_insert(issues_qtd);
     }
 
     sender
-        .send("✅ Vulnerabilities scan finished!\n".to_string())
+        .send(format!(
+            "{}\n",
+            "✅ Vulnerabilities scan finished!".bright_green().bold()
+        ))
         .ok();
     (all_vulnerabilities, issues)
 }
@@ -89,11 +93,23 @@ pub async fn check_gui(
     let mut final_issues: HashMap<String, i64> = HashMap::new();
 
     sender
-        .send("🔑 Validanting NVD API KEY...\n".to_string())
+        .send(format!(
+            "{}\n",
+            "🔑 Validating NVD API KEY...".bright_yellow().bold()
+        ))
         .ok();
 
     if looks_like_nvd_api_key(key.as_str()) {
-        sender.send("🔍  Reading cpes.mirak \n".to_string()).ok();
+        sender
+            .send(format!(
+                "{}\n",
+                "✅ NVD API KEY validated successfully!".bright_green()
+            ))
+            .ok();
+        sender
+            .send(format!("{}\n", "📖 Reading cpes.mirak...".bright_cyan()))
+            .ok();
+
         let os_cpe = cpes.first().unwrap().to_owned();
         let (vulnerabilities, issues) =
             check_vulnerabilities_gui(cpes, os_cpe.to_string(), &key, sender.clone()).await;
@@ -111,15 +127,45 @@ pub async fn check_gui(
             }
         }
     } else {
-        sender.send("⚠️Invalid NVD API KEY!\n".to_string()).ok();
+        sender
+            .send(format!(
+                "{}\n",
+                "❌ Invalid NVD API KEY! Please check your key and try again."
+                    .bright_red()
+                    .bold()
+            ))
+            .ok();
+        return all_vulnerabilities;
     }
 
     let total: i64 = final_issues.values().sum();
+
+    // Envia o resumo formatado
     sender
         .send(format!(
-            "\n{} {}\n",
-            "Total CVEs found: ".bright_green(),
-            total
+            "\n{}\n",
+            "═══════════════════════════════════════════".bright_magenta()
+        ))
+        .ok();
+    sender
+        .send(format!(
+            "{} {}\n",
+            "📊 SCAN SUMMARY".bright_magenta().bold(),
+            "📊".bright_magenta()
+        ))
+        .ok();
+    sender
+        .send(format!(
+            "{}\n",
+            "═══════════════════════════════════════════".bright_magenta()
+        ))
+        .ok();
+
+    sender
+        .send(format!(
+            "{} {}\n",
+            "🔍 Total CVEs found:".bright_green().bold(),
+            total.to_string().bright_yellow().bold()
         ))
         .ok();
 
@@ -127,12 +173,19 @@ pub async fn check_gui(
         sender
             .send(format!(
                 "{} {} {}\n",
-                "Total CVEs found for: ".bright_green(),
-                source,
-                qtd
+                "📦".bright_cyan(),
+                format!("{}:", source).bright_white(),
+                qtd.to_string().bright_yellow()
             ))
             .ok();
     }
+
+    sender
+        .send(format!(
+            "{}\n",
+            "═══════════════════════════════════════════".bright_magenta()
+        ))
+        .ok();
 
     all_vulnerabilities
 }
@@ -145,7 +198,10 @@ async fn check_vulnerabilities_for_cpe_gui(
     sender: mpsc::UnboundedSender<String>,
 ) -> (HashMap<String, Vec<CVEDataReport>>, String, i64) {
     sender
-        .send(format!("🔎 Searching NVD for CPE: {}\n", cpe))
+        .send(format!(
+            "{}\n",
+            format!("🔎 Searching NVD for CPE: {}", cpe).bright_blue()
+        ))
         .ok();
 
     // Get the informations about the given CPE
@@ -166,8 +222,10 @@ async fn check_vulnerabilities_for_cpe_gui(
 
         sender
             .send(format!(
-                "🐛 Found {} vulnerabilities for {}\n",
-                result.total_results, product_name
+                "{} {} {}\n",
+                "🐛 Found".bright_red(),
+                result.total_results.to_string().bright_yellow().bold(),
+                format!("vulnerabilities for {}", product_name).bright_white()
             ))
             .ok();
 
@@ -283,16 +341,18 @@ async fn check_vulnerabilities_for_cpe_gui(
 
         sender
             .send(format!(
-                "✅ Processed {} CVEs for {}\n",
-                vulnerabilities.len(),
-                product_name
+                "{} {} {}\n",
+                "✅ Processed".bright_green(),
+                vulnerabilities.len().to_string().bright_yellow().bold(),
+                format!("CVEs for {}", product_name).bright_white()
             ))
             .ok();
     } else {
         sender
             .send(format!(
-                "ℹ️ Zero vulnerabilities found for {}\n",
-                product_name
+                "{} {}\n",
+                "ℹ️".bright_cyan(),
+                format!("Zero vulnerabilities found for {}", product_name).bright_white()
             ))
             .ok();
     }

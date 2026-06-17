@@ -66,7 +66,18 @@ pub fn build_ui(app: &Application) {
         .hexpand(false)
         .build();
 
-    let init_btn = Button::builder().label("Check system").build();
+    let init_btn = Button::builder()
+        .label("Check system")
+        .sensitive(false)
+        .build();
+
+    let api_key_buffer_clone = api_key_buffer.clone();
+    let init_btn_clone = init_btn.clone();
+    api_key_buffer_clone.connect_changed(move |buffer| {
+        let (start, end) = buffer.bounds();
+        let text = buffer.text(&start, &end, false).to_string();
+        init_btn_clone.set_sensitive(!text.trim().is_empty());
+    });
 
     init_btn.connect_clicked({
         let api_key_buffer = api_key_buffer.clone();

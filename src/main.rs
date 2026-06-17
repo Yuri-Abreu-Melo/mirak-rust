@@ -39,7 +39,13 @@ struct Cli {
 fn parse_args(cli: &Cli) -> String {
     // Search NVD key on args
     if cli.key.is_none() && cli.key_file.is_none() {
-        panic!("{}", "[ERROR] - Please provide a valid NVD key".red());
+        eprintln!(
+            "{}",
+            "❌ ERROR: Please provide a valid NVD key"
+                .bright_red()
+                .bold()
+        );
+        std::process::exit(1);
     }
 
     let mut nvd_key = String::from("");
@@ -49,7 +55,22 @@ fn parse_args(cli: &Cli) -> String {
     }
 
     if let Some(key_path) = &cli.key_file {
-        nvd_key = fs::read_to_string(key_path).unwrap().trim().to_string();
+        match fs::read_to_string(key_path) {
+            Ok(content) => nvd_key = content.trim().to_string(),
+            Err(err) => {
+                eprintln!(
+                    "{}",
+                    format!(
+                        "❌ ERROR: Could not read key file '{}': {}",
+                        key_path.display(),
+                        err
+                    )
+                    .bright_red()
+                    .bold()
+                );
+                std::process::exit(1);
+            }
+        }
     }
 
     nvd_key
@@ -57,33 +78,59 @@ fn parse_args(cli: &Cli) -> String {
 
 async fn validate(cli: &Cli) {
     let nvd_key = parse_args(cli);
-    // Inspect ports there are listening
-    // let ports_result = extractors::network::list_open_ports();
-    // Validating routinator config and file permissions
+
+    println!(
+        "\n{}",
+        "═══════════════════════════════════════════".bright_magenta()
+    );
+    println!("{}", "🚀 MIRAK SECURITY SCANNER".bright_magenta().bold());
     println!(
         "{}",
-        "[INFO] - Starting Routinator data validation process".bright_green()
+        "═══════════════════════════════════════════".bright_magenta()
+    );
+
+    // Inspect ports there are listening
+    // let ports_result = extractors::network::list_open_ports();
+
+    // Validating routinator config and file permissions
+    println!(
+        "\n{}",
+        "🔍 Validating Routinator configuration..."
+            .bright_blue()
+            .bold()
+    );
+    println!(
+        "{}",
+        "📋 Checking Routinator data validation process".bright_cyan()
     );
 
     routinator::validator::validate();
     println!(
         "{}",
-        "[INFO] - Routinator data validation process completed successfully \n".bright_green()
+        "✅ Routinator data validation completed successfully\n".bright_green()
     );
 
     // Search for vulnerabilities in all installed apps
     println!(
         "{}",
-        "[INFO] - Starting operating system binaries validation \n".bright_green()
+        "🔍 Scanning operating system binaries for vulnerabilities...\n"
+            .bright_blue()
+            .bold()
     );
 
     let nvd_result = nvd::check::check(cpe::builder::build_cpe(), nvd_key).await;
+
     println!(
-        "{}",
-        "[INFO] - Processing vulnerability report".bright_green()
+        "\n{}",
+        "📊 Processing vulnerability report...".bright_blue().bold()
     );
 
     report::make_report(nvd_result);
+
+    println!(
+        "\n{}",
+        "✅ Scan completed successfully!".bright_green().bold()
+    );
 }
 
 #[tokio::main]
