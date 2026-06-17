@@ -37,14 +37,20 @@ pub async fn check_vulnerabilities(
 ) -> (HashMap<String, Vec<CVEDataReport>>, HashMap<String, i64>) {
     let mut all_vulnerabilities: HashMap<String, Vec<CVEDataReport>> = HashMap::new();
     let mut issues: HashMap<String, i64> = HashMap::new();
-    let progress_bar = indicatif::ProgressBar::new(cpes.len().try_into().unwrap());
+    let total_cpes = cpes.len();
 
     println!(
         "{}",
         "🔍 Starting vulnerability scan...".bright_blue().bold()
     );
+    println!(
+        "{} {} {}",
+        "📦 Total CPEs to check:".bright_cyan(),
+        total_cpes.to_string().bright_yellow().bold(),
+        "\n".to_string()
+    );
 
-    for cpe in cpes.iter() {
+    for (index, cpe) in cpes.iter().enumerate() {
         let (vuln_map, issue_source, issues_qtd) =
             check_vulnerabilities_for_cpe(os_cpe.as_str(), cpe.as_str(), key).await;
 
@@ -55,13 +61,23 @@ pub async fn check_vulnerabilities(
                 .or_default()
                 .extend(cve_data_list);
         }
-        progress_bar.inc(1);
+
+        // Mostrar progresso simples
+        let progress = format!("[{:>3}/{}]", index + 1, total_cpes);
+        print!(
+            "\r{} {} ",
+            progress.bright_cyan().bold(),
+            "📊 Processing...".bright_blue()
+        );
+        std::io::Write::flush(&mut std::io::stdout()).unwrap();
+
         issues.entry(issue_source).or_insert(issues_qtd);
     }
-    progress_bar.finish();
+
+    println!(); // Nova linha após o progresso
 
     println!(
-        "{}",
+        "\n{}",
         "✅ Scan completed successfully!".bright_green().bold()
     );
     (all_vulnerabilities, issues)
@@ -163,17 +179,16 @@ async fn check_vulnerabilities_for_cpe(
     let product_name = cpe_parts.get(4).unwrap_or(&"unknown").to_string();
     let version = cpe_parts.get(5).unwrap_or(&"unknown").to_string();
 
-    println!(
-        "{}",
-        format!("🔎 Searching NVD for CPE: {}", cpe).bright_blue()
-    );
+    // Log mais compacto para não poluir
+    // println!("{}", format!("🔎 Searching NVD for CPE: {}", cpe).bright_blue());
 
     if !result.vulnerabilities.is_empty() {
         issue_source.push_str(cpe_parts.get(4).unwrap_or(&"").to_owned());
         issues_qtd = result.total_results;
 
+        // Mostrar apenas se encontrar vulnerabilidades
         println!(
-            "{} {} {}",
+            "\n  {} {} {}",
             "🐛 Found".bright_red(),
             result.total_results.to_string().bright_yellow().bold(),
             format!("vulnerabilities for {}", product_name).bright_white()
@@ -290,16 +305,10 @@ async fn check_vulnerabilities_for_cpe(
         }
 
         println!(
-            "{} {} {}",
+            "  {} {} {}\n",
             "✅ Processed".bright_green(),
             vulnerabilities.len().to_string().bright_yellow().bold(),
             format!("CVEs for {}", product_name).bright_white()
-        );
-    } else {
-        println!(
-            "{} {}",
-            "ℹ️".bright_cyan(),
-            format!("Zero vulnerabilities found for {}", product_name).bright_white()
         );
     }
 
