@@ -1,0 +1,163 @@
+# frozen_string_literal: true
+
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# Distribution configuration mapping
+BOXES = {
+  fedora: {
+    box: 'cloud-image/fedora-43',
+    box_version: nil,
+    pkg_manager: 'dnf',
+    pkg_update: 'dnf upgrade -y',
+    pkg_install: 'dnf install -y',
+    devel_pkgs: 'curl git gcc gcc-c++ make wget ca-certificates',
+    sudo_group: 'wheel',
+    extra_pkgs: '',
+    go_arch: 'linux-amd64'
+  },
+  debian: {
+    box: 'debian/bookworm64',
+    box_version: '12.20250126.1',
+    pkg_manager: 'apt',
+    pkg_update: 'apt update && apt full-upgrade -y',
+    pkg_install: 'apt install -y',
+    devel_pkgs: 'curl git build-essential sudo wget apt-transport-https ca-certificates software-properties-common',
+    sudo_group: 'sudo',
+    extra_pkgs: '',
+    go_arch: 'linux-amd64'
+  },
+  ubuntu: {
+    box: 'ubuntu/jammy64',
+    box_version: '20241002.0.0',
+    pkg_manager: 'apt',
+    pkg_update: 'apt update && apt full-upgrade -y',
+    pkg_install: 'apt install -y',
+    devel_pkgs: 'curl git build-essential wget apt-transport-https ca-certificates software-properties-common',
+    sudo_group: 'sudo',
+    extra_pkgs: '',
+    go_arch: 'linux-amd64'
+  }
+}
+
+Vagrant.configure('2') do |config|
+  # Default configuration (overridden by each VM)
+  config.vm.synced_folder '.', '/vagrant', type: 'virtualbox'
+
+  # Define the three VMs
+  BOXES.each do |name, opts|
+    config.vm.define name do |vm|
+      vm.vm.box = opts[:box]
+      vm.vm.box_version = opts[:box_version] if opts[:box_version]
+      vm.vm.network 'public_network'
+
+      vm.vm.provider 'virtualbox' do |vb|
+        vb.memory = '2048'
+        vb.cpus = 2
+      end
+
+      # ----- PRIVILEGED SHELL (root) -----
+      vm.vm.provision 'shell', inline: <<~SHELL
+        # Update packages
+        #{opts[:pkg_update]}
+
+        # Install basic and development packages
+        #{opts[:pkg_install]} #{opts[:devel_pkgs]} #{opts[:extra_pkgs]}
+
+        # Ensure 'vagrant' user is in the sudo group (wheel for Fedora)
+        usermod -aG #{opts[:sudo_group]} vagrant
+        id vagrant
+
+        ## COPY MIRAK (if exists)
+        if [ -d /vagrant/mirak-app ]; then
+          cp -r /vagrant/mirak-app /home/vagrant/
+          chown -R vagrant:vagrant /home/vagrant/mirak-app
+          chmod +x /home/vagrant/mirak-app/* 2>/dev/null || true
+        else
+          echo "Warning: /vagrant/mirak-app folder not found. Skipping."
+        fi
+
+        ## INSTALL TRIVY (via official script)
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+        ## INSTALL GRYPE (via official script)
+        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+
+        ## INSTALL VULS (requires Go)
+        # Download and install Go
+        wget -q https://go.dev/dl/go1.26.2.linux-amd64.tar.gz
+        tar -C /usr/local -xzf go1.26.2.linux-amd64.tar.gz
+        rm go1.26.2.linux-amd64.tar.gz
+        echo 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh
+        export PATH=$PATH:/usr/local/go/bin
+
+        # Vuls dependencies
+        #{opts[:pkg_install]} sqlite3 gcc make
+
+        # Clone and compile Vuls
+        cd /opt
+        git clone --depth=1 https://github.com/future-architect/vuls.git
+        cd vuls
+        make install
+        ln -sf /root/go/bin/vuls /usr/local/bin/vuls
+        mkdir -p /opt/vuls/config /opt/vuls/results
+        chmod -R 755 /opt/vuls
+
+        ## CREATE CONFIG.TOML
+        cat > /home/vagrant/config.toml << 'EOF'
+        [servers]
+
+        [servers.localhost]
+        host = "localhost"
+        port = "local"
+        EOF
+
+        chown vagrant:vagrant /home/vagrant/config.toml
+        cd /
+      SHELL
+
+      # ----- UNPRIVILEGED SHELL (vagrant user) -----
+      vm.vm.provision 'shell', privileged: false, inline: <<-SHELL
+        # Install Rust (non-interactive mode)
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y -q
+
+        # Load Rust environment
+        source $HOME/.cargo/env
+
+        # Install Routinator (specific version)
+        cargo install routinator@0.8.3
+
+        # REMOVE ALL TRACES, KEEPING ONLY THE BINARY
+        echo "=== REMOVING ROUTINATOR TRACES ==="
+
+        # Remove source code
+        rm -rf $HOME/.cargo/registry/src/*/routinator-*
+
+        # Remove cache index
+        rm -rf $HOME/.cargo/registry/index/*/routinator
+
+        # Remove download caches
+        rm -rf $HOME/.cargo/registry/cache/*
+        rm -rf $HOME/.cargo/git/db/*
+        rm -rf $HOME/.cargo/.package-cache
+
+        # Remove .cargo-ok files
+        find $HOME/.cargo -name "*.cargo-ok" -delete 2>/dev/null || true
+
+        # Ensure Cargo's PATH is available
+        echo 'export PATH=$HOME/.cargo/bin:$PATH' >> $HOME/.bashrc
+
+        # Verify Routinator is installed and working
+        echo "=== ROUTINATOR INSTALLED ==="
+        routinator --version || echo "ERROR: Routinator not found!"
+
+        echo "=== TRACES REMOVED ==="
+        echo "Binary kept at: $(which routinator)"
+
+        # Check if anything remains
+        echo "=== CHECKING FOR REMAINING TRACES ==="
+        find $HOME/.cargo -name "*routinator*" 2>/dev/null || echo "No traces found!"
+      SHELL
+    end
+  end
+end
