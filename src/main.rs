@@ -41,7 +41,7 @@ fn parse_args(cli: &Cli) -> String {
     if cli.key.is_none() && cli.key_file.is_none() {
         eprintln!(
             "{}",
-            "❌ ERROR: Please provide a valid NVD key"
+            "[ERROR] Please provide a valid NVD key"
                 .bright_red()
                 .bold()
         );
@@ -61,7 +61,7 @@ fn parse_args(cli: &Cli) -> String {
                 eprintln!(
                     "{}",
                     format!(
-                        "❌ ERROR: Could not read key file '{}': {}",
+                        "[ERROR] Could not read key file '{}': {}",
                         key_path.display(),
                         err
                     )
@@ -95,25 +95,25 @@ async fn validate(cli: &Cli) {
     // Validating routinator config and file permissions
     println!(
         "\n{}",
-        "🔍 Validating Routinator configuration..."
+        "[INFO] Validating Routinator configuration..."
             .bright_blue()
             .bold()
     );
     println!(
         "{}",
-        "📋 Checking Routinator data validation process".bright_cyan()
+        "[INFO] Checking Routinator data validation process".bright_cyan()
     );
 
     routinator::validator::validate();
     println!(
         "{}",
-        "✅ Routinator data validation completed successfully\n".bright_green()
+        "[ OK ] Routinator data validation completed successfully\n".bright_green()
     );
 
     // Search for vulnerabilities in all installed apps
     println!(
         "{}",
-        "🔍 Scanning operating system binaries for vulnerabilities...\n"
+        "[INFO] Scanning operating system binaries for vulnerabilities...\n"
             .bright_blue()
             .bold()
     );
@@ -122,14 +122,14 @@ async fn validate(cli: &Cli) {
 
     println!(
         "\n{}",
-        "📊 Processing vulnerability report...".bright_blue().bold()
+        "[INFO] Processing vulnerability report...".bright_blue().bold()
     );
 
     report::make_report(nvd_result);
 
     println!(
         "\n{}",
-        "✅ Scan completed successfully!".bright_green().bold()
+        "[ OK ] Scan completed successfully!".bright_green().bold()
     );
 }
 

@@ -41,11 +41,11 @@ pub async fn check_vulnerabilities(
 
     println!(
         "{}",
-        "🔍 Starting vulnerability scan...".bright_blue().bold()
+        "[INFO] Starting vulnerability scan...".bright_blue().bold()
     );
     println!(
         "{} {} {}",
-        "📦 Total CPEs to check:".bright_cyan(),
+        "[INFO] Total CPEs to check:".bright_cyan(),
         total_cpes.to_string().bright_yellow().bold(),
         "\n".to_string()
     );
@@ -67,7 +67,7 @@ pub async fn check_vulnerabilities(
         print!(
             "\r{} {} ",
             progress.bright_cyan().bold(),
-            "📊 Processing...".bright_blue()
+            "[INFO] Processing...".bright_blue()
         );
         std::io::Write::flush(&mut std::io::stdout()).unwrap();
 
@@ -78,7 +78,7 @@ pub async fn check_vulnerabilities(
 
     println!(
         "\n{}",
-        "✅ Scan completed successfully!".bright_green().bold()
+        "[ OK ] Scan completed successfully!".bright_green().bold()
     );
     (all_vulnerabilities, issues)
 }
@@ -89,14 +89,14 @@ pub async fn check(cpes: Vec<String>, key: String) -> HashMap<String, Vec<CVEDat
     let mut all_vulnerabilities: HashMap<String, Vec<CVEDataReport>> = HashMap::new();
     let mut final_issues: HashMap<String, i64> = HashMap::new();
 
-    println!("{}", "🔑 Validating NVD API KEY...".bright_yellow().bold());
+    println!("{}", "[INFO] Validating NVD API KEY...".bright_yellow().bold());
 
     if looks_like_nvd_api_key(key.as_str()) {
         println!(
             "{}",
-            "✅ NVD API KEY validated successfully!".bright_green()
+            "[ OK ] NVD API KEY validated successfully!".bright_green()
         );
-        println!("{}", "📖 Reading cpes.mirak...".bright_cyan());
+        println!("{}", "[INFO] Reading cpes.mirak...".bright_cyan());
         let os_cpe = cpes.first().unwrap().to_owned();
         let (vulnerabilities, issues) = check_vulnerabilities(cpes, os_cpe.to_string(), &key).await;
 
@@ -115,7 +115,7 @@ pub async fn check(cpes: Vec<String>, key: String) -> HashMap<String, Vec<CVEDat
     } else {
         println!(
             "{}",
-            "❌ Invalid NVD API KEY! Please check your key and try again."
+            "[ERROR] Invalid NVD API KEY! Please check your key and try again."
                 .bright_red()
                 .bold()
         );
@@ -129,9 +129,8 @@ pub async fn check(cpes: Vec<String>, key: String) -> HashMap<String, Vec<CVEDat
         "═══════════════════════════════════════════".bright_magenta()
     );
     println!(
-        "{} {}",
-        "📊 SCAN SUMMARY".bright_magenta().bold(),
-        "📊".bright_magenta()
+        "{}",
+        "[INFO] SCAN SUMMARY".bright_magenta().bold()
     );
     println!(
         "{}",
@@ -140,14 +139,14 @@ pub async fn check(cpes: Vec<String>, key: String) -> HashMap<String, Vec<CVEDat
 
     println!(
         "{} {}",
-        "🔍 Total CVEs found:".bright_green().bold(),
+        "[INFO] Total CVEs found:".bright_green().bold(),
         total.to_string().bright_yellow().bold()
     );
 
     for (source, qtd) in final_issues {
         println!(
             "{} {} {}",
-            "📦".bright_cyan(),
+            "[INFO]".bright_cyan(),
             format!("{}:", source).bright_white(),
             qtd.to_string().bright_yellow()
         );
@@ -180,7 +179,7 @@ async fn check_vulnerabilities_for_cpe(
     let version = cpe_parts.get(5).unwrap_or(&"unknown").to_string();
 
     // Log mais compacto para não poluir
-    // println!("{}", format!("🔎 Searching NVD for CPE: {}", cpe).bright_blue());
+    // println!("{}", format!("[INFO] Searching NVD for CPE: {}", cpe).bright_blue());
 
     if !result.vulnerabilities.is_empty() {
         issue_source.push_str(cpe_parts.get(4).unwrap_or(&"").to_owned());
@@ -189,7 +188,7 @@ async fn check_vulnerabilities_for_cpe(
         // Mostrar apenas se encontrar vulnerabilidades
         println!(
             "\n  {} {} {}",
-            "🐛 Found".bright_red(),
+            "[INFO] Found".bright_red(),
             result.total_results.to_string().bright_yellow().bold(),
             format!("vulnerabilities for {}", product_name).bright_white()
         );
@@ -306,7 +305,7 @@ async fn check_vulnerabilities_for_cpe(
 
         println!(
             "  {} {} {}\n",
-            "✅ Processed".bright_green(),
+            "[ OK ] Processed".bright_green(),
             vulnerabilities.len().to_string().bright_yellow().bold(),
             format!("CVEs for {}", product_name).bright_white()
         );

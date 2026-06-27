@@ -23,7 +23,7 @@ pub fn validate_gui() -> String {
     } else {
         output.push_str(&format!(
             "{}\n",
-            "❌ ERROR: Routinator not installed".bright_red().bold()
+            "[ERROR] Routinator not installed".bright_red().bold()
         ));
     }
 
@@ -47,7 +47,7 @@ pub fn validate() {
     } else {
         println!(
             "{}",
-            "❌ ERROR: Routinator not installed. Please install it to continue."
+            "[ERROR] Routinator not installed. Please install it to continue."
                 .bright_red()
                 .bold()
         );
@@ -70,7 +70,7 @@ fn validate_config() -> String {
                 Ok(file) => match toml::from_str::<Config>(&file) {
                     Ok(_) => reports.push_str(
                         format!(
-                            "  ✅ Config file '{}' validated successfully\n",
+                            "  [ OK ] Config file '{}' validated successfully\n",
                             path.display()
                         )
                         .bright_green()
@@ -79,7 +79,7 @@ fn validate_config() -> String {
                     ),
                     Err(err) => reports.push_str(
                         format!(
-                            "  ⚠️  Invalid config file '{}': {}\n",
+                            "  [WARN] Invalid config file '{}': {}\n",
                             path.display(),
                             err.message().bright_red()
                         )
@@ -90,7 +90,7 @@ fn validate_config() -> String {
                 },
                 Err(err) => reports.push_str(
                     format!(
-                        "  ⚠️  Could not open config file '{}': {}\n",
+                        "  [WARN] Could not open config file '{}': {}\n",
                         path.display(),
                         err.to_string().bright_red()
                     )
@@ -104,7 +104,7 @@ fn validate_config() -> String {
 
     if reports.is_empty() {
         reports.push_str(
-            "⚠️Routinator config file not found in standard locations\n"
+            "[WARN] Routinator config file not found in standard locations\n"
                 .bright_yellow()
                 .to_string()
                 .as_str(),
@@ -123,12 +123,12 @@ fn check_routinator_files() -> Result<String, String> {
     ];
     let access_modes = extractors::os::get_files_access_mode(paths);
 
-    let mut result = String::from("📁 Checking Routinator configuration files:\n");
+    let mut result = String::from("[INFO] Checking Routinator configuration files:\n");
 
     for (path, mode) in access_modes {
         if mode.permission != 0o644 {
             return Err(format!(
-                "  ⚠️  File '{}' has incorrect permissions: {:o} (expected 644)\n",
+                "  [WARN] File '{}' has incorrect permissions: {:o} (expected 644)\n",
                 path.to_string().bright_white(),
                 mode.permission
             )
@@ -137,7 +137,7 @@ fn check_routinator_files() -> Result<String, String> {
         } else {
             result.push_str(
                 format!(
-                    "  ✅ File '{}' has correct permissions: {:o}\n",
+                    "  [ OK ] File '{}' has correct permissions: {:o}\n",
                     path.to_string().bright_white(),
                     mode.permission
                 )

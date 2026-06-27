@@ -47,7 +47,7 @@ pub async fn check_vulnerabilities_gui(
     sender
         .send(format!(
             "{}",
-            format!("🔍 Check for vulnerabilities for {} CPEs...\n", total_cpes)
+            format!("[INFO] Check for vulnerabilities for {} CPEs...\n", total_cpes)
                 .bright_blue()
                 .bold()
         ))
@@ -68,7 +68,7 @@ pub async fn check_vulnerabilities_gui(
         sender
             .send(format!(
                 "{}",
-                format!("📦 Progress: {}/{} CPEs checked\n", index + 1, total_cpes).bright_cyan()
+                format!("[INFO] Progress: {}/{} CPEs checked\n", index + 1, total_cpes).bright_cyan()
             ))
             .ok();
         issues.entry(issue_source).or_insert(issues_qtd);
@@ -77,7 +77,7 @@ pub async fn check_vulnerabilities_gui(
     sender
         .send(format!(
             "{}\n",
-            "✅ Vulnerabilities scan finished!".bright_green().bold()
+            "[ OK ] Vulnerabilities scan finished!".bright_green().bold()
         ))
         .ok();
     (all_vulnerabilities, issues)
@@ -95,7 +95,7 @@ pub async fn check_gui(
     sender
         .send(format!(
             "{}\n",
-            "🔑 Validating NVD API KEY...".bright_yellow().bold()
+            "[INFO] Validating NVD API KEY...".bright_yellow().bold()
         ))
         .ok();
 
@@ -103,11 +103,11 @@ pub async fn check_gui(
         sender
             .send(format!(
                 "{}\n",
-                "✅ NVD API KEY validated successfully!".bright_green()
+                "[ OK ] NVD API KEY validated successfully!".bright_green()
             ))
             .ok();
         sender
-            .send(format!("{}\n", "📖 Reading cpes.mirak...".bright_cyan()))
+            .send(format!("{}\n", "[INFO] Reading cpes.mirak...".bright_cyan()))
             .ok();
 
         let os_cpe = cpes.first().unwrap().to_owned();
@@ -130,7 +130,7 @@ pub async fn check_gui(
         sender
             .send(format!(
                 "{}\n",
-                "❌ Invalid NVD API KEY! Please check your key and try again."
+                "[ERROR] Invalid NVD API KEY! Please check your key and try again."
                     .bright_red()
                     .bold()
             ))
@@ -150,8 +150,8 @@ pub async fn check_gui(
     sender
         .send(format!(
             "{} {}\n",
-            "📊 SCAN SUMMARY".bright_magenta().bold(),
-            "📊".bright_magenta()
+            "[INFO] SCAN SUMMARY".bright_magenta().bold(),
+            "".bright_magenta()
         ))
         .ok();
     sender
@@ -164,7 +164,7 @@ pub async fn check_gui(
     sender
         .send(format!(
             "{} {}\n",
-            "🔍 Total CVEs found:".bright_green().bold(),
+            "[INFO] Total CVEs found:".bright_green().bold(),
             total.to_string().bright_yellow().bold()
         ))
         .ok();
@@ -173,7 +173,7 @@ pub async fn check_gui(
         sender
             .send(format!(
                 "{} {} {}\n",
-                "📦".bright_cyan(),
+                "[INFO]".bright_cyan(),
                 format!("{}:", source).bright_white(),
                 qtd.to_string().bright_yellow()
             ))
@@ -200,7 +200,7 @@ async fn check_vulnerabilities_for_cpe_gui(
     sender
         .send(format!(
             "{}\n",
-            format!("🔎 Searching NVD for CPE: {}", cpe).bright_blue()
+            format!("[INFO] Searching NVD for CPE: {}", cpe).bright_blue()
         ))
         .ok();
 
@@ -223,7 +223,7 @@ async fn check_vulnerabilities_for_cpe_gui(
         sender
             .send(format!(
                 "{} {} {}\n",
-                "🐛 Found".bright_red(),
+                "[INFO] Found".bright_red(),
                 result.total_results.to_string().bright_yellow().bold(),
                 format!("vulnerabilities for {}", product_name).bright_white()
             ))
@@ -342,7 +342,7 @@ async fn check_vulnerabilities_for_cpe_gui(
         sender
             .send(format!(
                 "{} {} {}\n",
-                "✅ Processed".bright_green(),
+                "[ OK ] Processed".bright_green(),
                 vulnerabilities.len().to_string().bright_yellow().bold(),
                 format!("CVEs for {}", product_name).bright_white()
             ))
@@ -351,7 +351,7 @@ async fn check_vulnerabilities_for_cpe_gui(
         sender
             .send(format!(
                 "{} {}\n",
-                "ℹ️".bright_cyan(),
+                "[INFO]".bright_cyan(),
                 format!("Zero vulnerabilities found for {}", product_name).bright_white()
             ))
             .ok();

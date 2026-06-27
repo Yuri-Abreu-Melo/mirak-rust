@@ -26,7 +26,7 @@ pub fn build_ui(app: &Application) {
     const IMAGE_DATA: &[u8] = include_bytes!("../assets/ime-crest.png");
 
     let api_text = Label::builder().build();
-    api_text.set_markup("📋 Enter your NVD API Key to scan the system");
+    api_text.set_markup("[INFO] Enter your NVD API Key to scan the system");
 
     let bytes = gtk::glib::Bytes::from(IMAGE_DATA);
     let texture = Texture::from_bytes(&bytes).unwrap();
@@ -132,19 +132,19 @@ pub fn build_ui(app: &Application) {
                         let _ = tx.send(msg.to_string());
                     };
 
-                    log("🔍 Initializing validation of Routinator data\n");
+                    log("[INFO] Initializing validation of Routinator data\n");
                     log(&routinator::validator::validate_gui());
-                    log("✅ Routinator validation completed\n\n");
-                    log("🔍 Initializing system binaries validation\n\n");
+                    log("[ OK ] Routinator validation completed\n\n");
+                    log("[INFO] Initializing system binaries validation\n\n");
 
                     let cpes = cpe::builder::build_cpe_gui();
                     let nvd_result = nvd::check_gui::check_gui(cpes, nvd_key, tx.clone()).await;
 
-                    log("\n📊 Processing vulnerabilities report\n");
+                    log("\n[INFO] Processing vulnerabilities report\n");
                     report::make_report(nvd_result);
 
                     log("\n═══════════════════════════════════════════\n");
-                    log("✅ VALIDATION FINISHED SUCCESSFULLY!\n");
+                    log("[ OK ] VALIDATION FINISHED SUCCESSFULLY!\n");
                     log("═══════════════════════════════════════════\n");
                 });
             });
