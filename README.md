@@ -28,35 +28,71 @@ The compiled Mirak binary must be placed within the `mirak-app` directory locate
 
 #### Building the Mirak Binary
 
-##### Prerequisites for Standard Build
+##### Prerequisites
 
 **Required System Dependencies:**
 
-- **musl**: Lightweight C standard library implementation for static linking
-  - Ubuntu/Debian: `sudo apt install musl-tools`
-  - Fedora: `sudo dnf install musl-gcc`
+**musl (Ubuntu/Debian):**
+
+```
+sudo apt install musl-tools
+```
+
+**musl (Fedora):**
+
+```
+sudo dnf install musl-gcc
+```
+
+**musl (Arch Linux):**
+
+```
+sudo pacman -S musl
+```
 
 **Rust Build Environment Setup:**
-`rustup target add x86_64-unknown-linux-musl`
+
+```
+rustup target add x86_64-unknown-linux-musl
+```
 
 ##### Standard Build (Command-Line Interface)
 
 To compile Mirak without graphical interface support (statically linked with musl):
-`cargo build --release --target x86_64-unknown-linux-musl`
+
+```
+cargo build --release --target x86_64-unknown-linux-musl
+```
 
 ##### GUI-Enabled Build
 
 **Important**: GUI builds CANNOT use musl due to GTK4 dynamic linking requirements. The build must target the native system architecture.
 
 **Install GTK4 Development Libraries:**
-`# Ubuntu/Debian`
-`sudo apt install libgtk-4-dev pkg-config`
 
-`# Fedora`
-`sudo dnf install gtk4-devel pkgconfig`
+**GTK4 (Ubuntu/Debian):**
+
+```
+sudo apt install libgtk-4-dev pkg-config
+```
+
+**GTK4 (Fedora):**
+
+```
+sudo dnf install gtk4-devel pkgconfig
+```
+
+**GTK4 (Arch Linux):**
+
+```
+sudo pacman -S gtk4 pkg-config
+```
 
 **Build with GUI Features Enabled (native target):**
-`cargo build --release --features gui`
+
+```
+cargo build --release --features gui
+```
 
 **Note**: GUI builds require GTK4 runtime libraries to be present on the target system. The resulting binary will be dynamically linked against system libraries, unlike the musl-based static build.
 
@@ -71,14 +107,37 @@ Pre-compiled binaries are available through the project's GitHub Releases page:
 
 ### Virtual Machine Management
 
-1. Navigate to the Vagrant directory:
-   `cd vagrant-VM's/`
+**Navigate to the Vagrant directory:**
 
-2. Initialize and provision the virtual machines:
-   `vagrant up`
+```
+cd vagrant-VM's/
+```
 
-3. Establish SSH connection to a specific VM:
-   `vagrant ssh ubuntu    # or debian, fedora`
+**Initialize and provision the virtual machines:**
+
+```
+vagrant up
+```
+
+**Establish SSH connection to a specific VM:**
+
+**Ubuntu:**
+
+```
+vagrant ssh ubuntu
+```
+
+**Debian:**
+
+```
+vagrant ssh debian
+```
+
+**Fedora:**
+
+```
+vagrant ssh fedora
+```
 
 ### Execution Procedures
 
@@ -87,13 +146,22 @@ Pre-compiled binaries are available through the project's GitHub Releases page:
 The Mirak binary resides in the vagrant user's HOME directory (`/home/vagrant/mirak-app/`) and supports the following execution modes:
 
 **Display Help Menu:**
-`./mirak-app/mirak -h`
+
+```
+./mirak-app/mirak -h
+```
 
 **Execute Scanner with API Key (CLI mode):**
-`./mirak-app/mirak -f mirak-app/api_key.txt`
+
+```
+./mirak-app/mirak -f mirak-app/api_key.txt
+```
 
 **Execute Scanner with GUI Interface:**
-`./mirak-app/mirak -g`
+
+```
+./mirak-app/mirak -g
+```
 
 **Note**: When using the GUI mode with `-g` flag, the API key will be entered through the graphical interface after the application launches. The scanner will prompt for the API key within the GUI window.
 
@@ -106,8 +174,11 @@ The Mirak binary resides in the vagrant user's HOME directory (`/home/vagrant/mi
 
 The scanner specifically targets CVE-2024-1622, affecting Routinator RPKI validator versions up to 0.12.2. The Routinator version is configurable within the Vagrantfile:
 
-`# In Vagrantfile, modify the following line to test different versions`
-`cargo install routinator@0.12.2  # Change version to test`
+**Modify Routinator version in Vagrantfile:**
+
+```
+cargo install routinator@0.12.2
+```
 
 ## Technical Architecture
 
