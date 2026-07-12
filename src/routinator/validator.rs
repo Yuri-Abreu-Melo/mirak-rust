@@ -54,8 +54,8 @@ pub fn validate() {
     }
 }
 
-/// This function simply reads the path and try to convert using the Config struct
-/// so invalid fields (unexpected, wrong values or missing obrigatory) fires error
+/// This function simply reads the path and tries to convert it using the Config struct
+/// so invalid fields (unexpected, wrong values, or missing mandatory fields) raise an error
 fn validate_config() -> String {
     let mut reports = String::from("");
     let home_dir = std::env::var("HOME").unwrap_or_default();
@@ -113,8 +113,8 @@ fn validate_config() -> String {
     reports
 }
 
-/// This function check if the routinator config dir and config file exists
-/// and check if the right permissions are setted
+/// This function checks whether the routinator config dir and config files exist
+/// and verifies that the correct permissions are set
 fn check_routinator_files() -> Result<String, String> {
     let home_dir = std::env::var("HOME").unwrap_or_default();
     let paths = vec![

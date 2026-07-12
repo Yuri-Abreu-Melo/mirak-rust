@@ -1,7 +1,11 @@
+#[cfg(feature = "gui")]
 use colored::*;
+#[cfg(feature = "gui")]
 use regex::Regex;
+#[cfg(feature = "gui")]
 use std::collections::HashMap;
 
+#[cfg(feature = "gui")]
 use crate::nvd;
 #[cfg(feature = "gui")]
 use crate::nvd::check::CVEDataReport;
@@ -9,6 +13,7 @@ use crate::nvd::check::CVEDataReport;
 #[cfg(feature = "gui")]
 use tokio::sync::mpsc;
 
+#[cfg(feature = "gui")]
 fn looks_like_nvd_api_key(input: &str) -> bool {
     let re = Regex::new(
         r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
@@ -17,6 +22,7 @@ fn looks_like_nvd_api_key(input: &str) -> bool {
     re.is_match(input.trim())
 }
 
+#[cfg(feature = "gui")]
 fn matches_cpe(cpe_pattern: &str, cpe_to_check: &str) -> bool {
     let pattern_parts: Vec<&str> = cpe_pattern.split(':').collect();
     let check_parts: Vec<&str> = cpe_to_check.split(':').collect();
@@ -140,7 +146,7 @@ pub async fn check_gui(
 
     let total: i64 = final_issues.values().sum();
 
-    // Envia o resumo formatado
+    // Send the formatted summary
     sender
         .send(format!(
             "\n{}\n",

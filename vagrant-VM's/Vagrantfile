@@ -37,6 +37,28 @@ BOXES = {
     sudo_group: 'sudo',
     extra_pkgs: '',
     go_arch: 'linux-amd64'
+  },
+  xenial: {
+    box: 'ubuntu/xenial64',
+    box_version: nil,                 
+    pkg_manager: 'apt',
+    pkg_update: 'apt update && apt full-upgrade -y',
+    pkg_install: 'apt install -y',
+    devel_pkgs: 'curl git build-essential sudo wget apt-transport-https ca-certificates software-properties-common',
+    sudo_group: 'sudo',
+    extra_pkgs: '',
+    go_arch: 'linux-amd64'
+  },
+  bionic: {
+    box: 'ubuntu/bionic64',
+    box_version: nil,
+    pkg_manager: 'apt',
+    pkg_update: 'apt update && apt full-upgrade -y',
+    pkg_install: 'apt install -y',
+    devel_pkgs: 'curl git build-essential sudo wget apt-transport-https ca-certificates software-properties-common',
+    sudo_group: 'sudo',
+    extra_pkgs: '',
+    go_arch: 'linux-amd64'
   }
 }
 

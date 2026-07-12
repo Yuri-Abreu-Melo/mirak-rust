@@ -62,7 +62,7 @@ pub async fn check_vulnerabilities(
                 .extend(cve_data_list);
         }
 
-        // Mostrar progresso simples
+        // Show simple progress
         let progress = format!("[{:>3}/{}]", index + 1, total_cpes);
         print!(
             "\r{} {} ",
@@ -74,7 +74,7 @@ pub async fn check_vulnerabilities(
         issues.entry(issue_source).or_insert(issues_qtd);
     }
 
-    println!(); // Nova linha após o progresso
+    println!(); // New line after progress
 
     println!(
         "\n{}",
@@ -172,20 +172,20 @@ async fn check_vulnerabilities_for_cpe(
     let mut issue_source = String::from("");
     let mut issues_qtd = 0;
 
-    // Extrai vendor e product do CPE
+    // Extract vendor and product from the CPE
     let cpe_parts: Vec<&str> = cpe.split(':').collect();
     let vendor = cpe_parts.get(3).unwrap_or(&"unknown").to_string();
     let product_name = cpe_parts.get(4).unwrap_or(&"unknown").to_string();
     let version = cpe_parts.get(5).unwrap_or(&"unknown").to_string();
 
-    // Log mais compacto para não poluir
+    // More compact log to avoid clutter
     // println!("{}", format!("[INFO] Searching NVD for CPE: {}", cpe).bright_blue());
 
     if !result.vulnerabilities.is_empty() {
         issue_source.push_str(cpe_parts.get(4).unwrap_or(&"").to_owned());
         issues_qtd = result.total_results;
 
-        // Mostrar apenas se encontrar vulnerabilidades
+        // Show only if vulnerabilities are found
         println!(
             "\n  {} {} {}",
             "[INFO] Found".bright_red(),

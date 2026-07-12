@@ -1,9 +1,10 @@
 use crate::{
-    cpe::apps::{PackageManager, find_installed_apps},
+    cpe::apps::{PackageManager, find_installed_apps, normalize_package_name, normalize_version},
     extractors::os,
 };
 
 use colored::*;
+use std::collections::HashMap;
 
 fn write_cpes_to_file(cpes: &[String], filename: &str) -> std::io::Result<()> {
     use std::fs::File;
@@ -18,7 +19,25 @@ fn write_cpes_to_file(cpes: &[String], filename: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Create the cpes for apps instaled and the OS
+fn get_cpe_mapping() -> HashMap<&'static str, (&'static str, &'static str)> {
+    HashMap::from([
+        ("openssl", ("openssl", "openssl")),
+        ("libssl", ("openssl", "openssl")),
+        ("apache2", ("apache", "http_server")),
+        ("httpd", ("apache", "http_server")),
+        ("nginx", ("nginx", "nginx")),
+        ("python-requests", ("python-requests", "requests")),
+        ("requests", ("python-requests", "requests")),
+        ("linux-libc-dev", ("linux", "linux_kernel")),
+        ("glibc", ("gnu", "glibc")),
+        ("libc6", ("gnu", "glibc")),
+        ("bash", ("gnu", "bash")),
+        ("zlib1g", ("zlib", "zlib")),
+        ("expat", ("libexpat", "expat")),
+    ])
+}
+
+/// Build CPEs for installed applications and OS
 pub fn build_cpe() -> Vec<String> {
     println!("\n{}", "═══════════════════════════════════════════".bright_magenta());
     println!("{}", "[INFO] BUILDING CPEs FOR SYSTEM SCAN".bright_magenta().bold());
@@ -69,7 +88,7 @@ pub fn build_cpe() -> Vec<String> {
     let mut cpes: Vec<String> = Vec::new();
     let os_release = os::extract_os_release_info();
     
-    // Create the OS cpe
+    // Create the OS CPE
     let os_id = os_release.get("ID").unwrap();
     let os_version = os_release.get("VERSION_ID").unwrap();
     
@@ -96,21 +115,53 @@ pub fn build_cpe() -> Vec<String> {
 
     println!("{}", "[INFO] Generating CPEs for packages...".bright_blue());
     let mut cpe_count = 0;
+    let mapping = get_cpe_mapping();
+
     for package in packages.unwrap() {
+        // --- ROUTINATOR / NLNETLABS especial ---
+        // If the package was explicitly marked as routinator by the collector,
+        // we already have the correct vendor and product.
+        if package.distributor == "nlnetlabs" || package.name.contains("routinator") {
+            let version = normalize_version(&package.version);
+            cpes.push(format!(
+                "cpe:2.3:a:nlnetlabs:routinator:{}:*:*:*:*:*:*:*",
+                version
+            ));
+            cpe_count += 1;
+            continue;
+        }
+
+        // --- General application CPE generation ---
+        // Prefer source_name (normalized), else name normalized
+        let raw_name = if !package.source_name.is_empty() {
+            &package.source_name
+        } else {
+            &package.name
+        };
+        let normalized_name = normalize_package_name(raw_name);
+        let version = normalize_version(&package.version);
+
+        // Lookup mapping or fallback to normalized name as vendor and product
+        let (vendor, product) = if let Some(&(v, p)) = mapping.get(normalized_name.as_str()) {
+            (v, p)
+        } else {
+            (normalized_name.as_str(), normalized_name.as_str())
+        };
+
         cpes.push(format!(
             "cpe:2.3:a:{}:{}:{}:*:*:*:*:*:*:*",
-            package.distributor, package.name, package.version
+            vendor, product, version
         ));
         cpe_count += 1;
         
-        // Mostrar progresso a cada 100 CPEs gerados
+        // Show progress every 100 CPEs
         if cpe_count % 100 == 0 {
             print!("\r  [INFO] Progress: {} CPEs generated", cpe_count.to_string().bright_yellow());
         }
     }
     
     if cpe_count > 100 {
-        println!(); // Nova linha após o progresso
+        println!();
     }
     
     println!(
@@ -163,7 +214,7 @@ pub fn build_cpe_gui() -> Vec<String> {
     let mut cpes: Vec<String> = Vec::new();
     let os_release = os::extract_os_release_info();
     
-    // Create the OS cpe
+    // OS CPE
     if os_release.get("ID").unwrap().to_lowercase().eq("ubuntu") {
         cpes.push(format!(
             "cpe:2.3:o:canonical:{}:{}:*:*:*:*:*:*:*",
@@ -178,15 +229,38 @@ pub fn build_cpe_gui() -> Vec<String> {
         ));
     }
     
+    let mapping = get_cpe_mapping();
     for package in packages.unwrap() {
+        // Routinator special treatment
+        if package.distributor == "nlnetlabs" || package.name.contains("routinator") {
+            let version = normalize_version(&package.version);
+            cpes.push(format!(
+                "cpe:2.3:a:nlnetlabs:routinator:{}:*:*:*:*:*:*:*",
+                version
+            ));
+            continue;
+        }
+
+        let raw_name = if !package.source_name.is_empty() {
+            &package.source_name
+        } else {
+            &package.name
+        };
+        let normalized_name = normalize_package_name(raw_name);
+        let version = normalize_version(&package.version);
+
+        let (vendor, product) = if let Some(&(v, p)) = mapping.get(normalized_name.as_str()) {
+            (v, p)
+        } else {
+            (normalized_name.as_str(), normalized_name.as_str())
+        };
+
         cpes.push(format!(
             "cpe:2.3:a:{}:{}:{}:*:*:*:*:*:*:*",
-            package.distributor, package.name, package.version
+            vendor, product, version
         ));
     }
     
-    // Salvar CPEs em arquivo (silenciosamente na GUI)
     let _ = write_cpes_to_file(&cpes, "cpes.mirak");
-    
     cpes
 }

@@ -104,7 +104,7 @@ pub fn build_ui(app: &Application) {
                 let output_buffer = output_buffer.clone();
                 let output_text_view = output_text_view.clone();
                 move |msg: &str| {
-                    // Remover caracteres ANSI e manter emojis
+                    // Remove ANSI characters and keep emojis
                     let clean_msg = strip_ansi_escapes(msg);
                     output_buffer.insert(&mut output_buffer.end_iter(), &clean_msg);
                     let mut end = output_buffer.end_iter();

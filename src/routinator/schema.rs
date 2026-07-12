@@ -39,7 +39,7 @@ pub struct Config {
     pub tal_dir: Option<PathBuf>,
 }
 
-// The Enum controls which values can be setted
+// The enum controls which values can be set
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
