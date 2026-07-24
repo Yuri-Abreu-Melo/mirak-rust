@@ -240,99 +240,45 @@ async fn check_vulnerabilities_for_cpe_gui(
 
             for config in &cves.cve.configurations {
                 for node in &config.nodes {
-                    if node.operator.eq("OR") {
-                        if node
-                            .cpe_match
-                            .iter()
-                            .any(|item| matches_cpe(cpe, item.criteria.as_str()))
-                        {
-                            let base_score = cves
+                    if should_report_vulnerability_for_node(node.operator.as_str(), cpe, node) {
+                        let base_score = cves
+                            .cve
+                            .metrics
+                            .cvss_metric_v31
+                            .first()
+                            .map(|m| m.cvss_data.base_score)
+                            .unwrap_or(0.0);
+
+                        let base_severity = cves
+                            .cve
+                            .metrics
+                            .cvss_metric_v31
+                            .first()
+                            .map(|m| m.cvss_data.base_severity.clone())
+                            .unwrap_or_else(|| "UNKNOWN".to_string());
+
+                        let cve_data = CVEDataReport {
+                            product: product_name.clone(),
+                            vendor: vendor.clone(),
+                            version: version.clone(),
+                            base_score,
+                            base_severity,
+                            cve_id: cves.cve.id.clone(),
+                            description: cves
                                 .cve
-                                .metrics
-                                .cvss_metric_v31
+                                .descriptions
                                 .first()
-                                .map(|m| m.cvss_data.base_score)
-                                .unwrap_or(0.0);
+                                .map(|d| d.value.clone())
+                                .unwrap_or_default(),
+                        };
 
-                            let base_severity = cves
-                                .cve
-                                .metrics
-                                .cvss_metric_v31
-                                .first()
-                                .map(|m| m.cvss_data.base_severity.clone())
-                                .unwrap_or_else(|| "UNKNOWN".to_string());
+                        vulnerabilities
+                            .entry(cves.cve.id.clone())
+                            .or_default()
+                            .push(cve_data);
 
-                            let cve_data = CVEDataReport {
-                                product: product_name.clone(),
-                                vendor: vendor.clone(),
-                                version: version.clone(),
-                                base_score,
-                                base_severity,
-                                cve_id: cves.cve.id.clone(),
-                                description: cves
-                                    .cve
-                                    .descriptions
-                                    .first()
-                                    .map(|d| d.value.clone())
-                                    .unwrap_or_default(),
-                            };
-
-                            vulnerabilities
-                                .entry(cves.cve.id.clone())
-                                .or_default()
-                                .push(cve_data);
-
-                            cve_found = true;
-                            break;
-                        }
-                    } else {
-                        let mut related = true;
-                        if node
-                            .cpe_match
-                            .iter()
-                            .any(|item| matches_cpe(cpe, item.criteria.as_str()))
-                        {
-                            related = false;
-                        }
-                        if related {
-                            let base_score = cves
-                                .cve
-                                .metrics
-                                .cvss_metric_v31
-                                .first()
-                                .map(|m| m.cvss_data.base_score)
-                                .unwrap_or(0.0);
-
-                            let base_severity = cves
-                                .cve
-                                .metrics
-                                .cvss_metric_v31
-                                .first()
-                                .map(|m| m.cvss_data.base_severity.clone())
-                                .unwrap_or_else(|| "UNKNOWN".to_string());
-
-                            let cve_data = CVEDataReport {
-                                product: product_name.clone(),
-                                vendor: vendor.clone(),
-                                version: version.clone(),
-                                base_score,
-                                base_severity,
-                                cve_id: cves.cve.id.clone(),
-                                description: cves
-                                    .cve
-                                    .descriptions
-                                    .first()
-                                    .map(|d| d.value.clone())
-                                    .unwrap_or_default(),
-                            };
-
-                            vulnerabilities
-                                .entry(cves.cve.id.clone())
-                                .or_default()
-                                .push(cve_data);
-
-                            cve_found = true;
-                        }
+                        cve_found = true;
+                        break;
                     }
 
                     if cve_found {
