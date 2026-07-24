@@ -29,7 +29,7 @@ fn matches_cpe(cpe_pattern: &str, cpe_to_check: &str) -> bool {
     true
 }
 
-fn should_report_vulnerability_for_node(node_operator: &str, cpe: &str, node: &Node) -> bool {
+pub fn should_report_vulnerability_for_node(node_operator: &str, cpe: &str, node: &Node) -> bool {
     let node_matches = node
         .cpe_match
         .iter()

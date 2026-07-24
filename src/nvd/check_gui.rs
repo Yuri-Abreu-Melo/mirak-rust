@@ -8,7 +8,7 @@ use std::collections::HashMap;
 #[cfg(feature = "gui")]
 use crate::nvd;
 #[cfg(feature = "gui")]
-use crate::nvd::check::CVEDataReport;
+use crate::nvd::check::{CVEDataReport, should_report_vulnerability_for_node};
 
 #[cfg(feature = "gui")]
 use tokio::sync::mpsc;
