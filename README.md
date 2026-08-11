@@ -113,6 +113,14 @@ Pre-compiled binaries are available through the project's GitHub Releases page:
 cd vagrant-VM's/
 ```
 
+The benchmark runner script is stored in `vagrant-VM's/benchmark_script.sh` and mounted directly into each VM through `/vagrant`. Vagrant provisioning also creates a symbolic link for the `mirak-app` directory at `/home/vagrant/mirak-app`, so no application files or API key are copied into the guest filesystem.
+
+Inside each VM, run the benchmark script as the vagrant user:
+
+```
+bash /home/vagrant/benchmark_script.sh
+```
+
 **Initialize and provision the virtual machines:**
 
 ```

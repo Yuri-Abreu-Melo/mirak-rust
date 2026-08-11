@@ -33,7 +33,7 @@ pub fn build_ui(app: &Application) {
     let image = Picture::for_paintable(&texture);
 
     let scrolled_window = ScrolledWindow::builder()
-        .height_request(200)
+        .height_request(450)
         .hscrollbar_policy(gtk::PolicyType::Never)
         .build();
 
@@ -192,7 +192,7 @@ pub fn build_ui(app: &Application) {
         .application(app)
         .title("MIRAK - Security Scanner")
         .child(&hbox)
-        .default_height(700)
+        .default_height(900)
         .default_width(850)
         .build();
 

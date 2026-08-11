@@ -90,13 +90,23 @@ Vagrant.configure('2') do |config|
         usermod -aG #{opts[:sudo_group]} vagrant
         id vagrant
 
-        ## COPY MIRAK (if exists)
+        ## SYMLINK MIRAK APP DIRECTORY (no copy)
         if [ -d /vagrant/mirak-app ]; then
-          cp -r /vagrant/mirak-app /home/vagrant/
-          chown -R vagrant:vagrant /home/vagrant/mirak-app
-          chmod +x /home/vagrant/mirak-app/* 2>/dev/null || true
+          rm -rf /home/vagrant/mirak-app
+          ln -sfn /vagrant/mirak-app /home/vagrant/mirak-app
+          chown -h vagrant:vagrant /home/vagrant/mirak-app || true
+          chmod +x /vagrant/mirak-app/* 2>/dev/null || true
         else
-          echo "Warning: /vagrant/mirak-app folder not found. Skipping."
+          echo "Warning: /vagrant/mirak-app folder not found. Skipping symlink."
+        fi
+
+        ## SYMLINK BENCHMARK SCRIPT (no duplicate copy)
+        if [ -f /vagrant/benchmark_script.sh ]; then
+          ln -sfn /vagrant/benchmark_script.sh /home/vagrant/benchmark_script.sh
+          chown -h vagrant:vagrant /home/vagrant/benchmark_script.sh || true
+          chmod +x /home/vagrant/benchmark_script.sh
+        else
+          echo "Warning: /vagrant/benchmark_script.sh not found. Skipping symlink."
         fi
 
         ## INSTALL TRIVY (via official script)
