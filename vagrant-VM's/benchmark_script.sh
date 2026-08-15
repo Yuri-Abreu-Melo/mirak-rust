@@ -1,133 +1,144 @@
 #!/bin/bash
-# benchmark_script.sh – execute inside the VM
+# benchmark_script.sh – with elapsed time (elapsed_sec)
 
-# Do not stop on non-zero exit codes; capture failures in the logs
 set +e
 
 RESULT_DIR="/vagrant/benchmarks/$(date +%Y%m%d_%H%M%S)_$(hostname)"
 mkdir -p "$RESULT_DIR"
 
 # ------------------------------------------------------------
-# Run a benchmark command with sudo and log full output
+# Process monitoring function (with relative time)
 # ------------------------------------------------------------
-run_bench_sudo() {
+monitor_process() {
+    local tool="$1"
+    local output_file="$2"
+    local use_sudo="$3"
+    local parent_pid="$4"
+
+    (
+        local start_time=$(date +%s)
+        local empty_count=0
+
+        while true; do
+            if ! kill -0 "$parent_pid" 2>/dev/null; then
+                sleep 1
+                break
+            fi
+
+            local pids
+            if [ "$use_sudo" = "sudo" ]; then
+                pids=$(sudo ps -C "$tool" -o pid= --no-headers 2>/dev/null | tr '\n' ' ')
+                if [ -z "$pids" ] && command -v pgrep &>/dev/null; then
+                    pids=$(sudo pgrep -f "$tool" 2>/dev/null | tr '\n' ' ')
+                fi
+                if [ -z "$pids" ]; then
+                    pids=$(sudo ps aux | grep -E "[0-9]+ +[0-9.]+ +[0-9.]+ +[0-9]+ +.*$tool" | grep -v grep | awk '{print $2}' | tr '\n' ' ')
+                fi
+            else
+                pids=$(ps -C "$tool" -o pid= --no-headers 2>/dev/null | tr '\n' ' ')
+                if [ -z "$pids" ] && command -v pgrep &>/dev/null; then
+                    pids=$(pgrep -f "$tool" 2>/dev/null | tr '\n' ' ')
+                fi
+                if [ -z "$pids" ]; then
+                    pids=$(ps aux | grep -E "[0-9]+ +[0-9.]+ +[0-9.]+ +[0-9]+ +.*$tool" | grep -v grep | awk '{print $2}' | tr '\n' ' ')
+                fi
+            fi
+
+            if [ -z "$pids" ]; then
+                empty_count=$((empty_count + 1))
+                if [ $empty_count -ge 3 ]; then
+                    break
+                fi
+                sleep 0.5
+                continue
+            else
+                empty_count=0
+            fi
+
+            local stats
+            if [ "$use_sudo" = "sudo" ]; then
+                stats=$(sudo ps -p $pids -o %cpu=,rss=,vsz= --no-headers 2>/dev/null | awk '
+                    { cpu += $1; rss += $2; vsz += $3 }
+                    END { printf "%.1f %.2f %.2f", cpu, rss/1024, vsz/1024 }
+                ')
+            else
+                stats=$(ps -p $pids -o %cpu=,rss=,vsz= --no-headers 2>/dev/null | awk '
+                    { cpu += $1; rss += $2; vsz += $3 }
+                    END { printf "%.1f %.2f %.2f", cpu, rss/1024, vsz/1024 }
+                ')
+            fi
+
+            if [ -z "$stats" ]; then
+                break
+            fi
+
+            local now=$(date +%s)
+            local elapsed=$((now - start_time))
+            echo "$now $elapsed $stats" >> "$output_file"
+            sleep 1
+        done
+    ) &
+}
+
+# ------------------------------------------------------------
+# Function to run a benchmark
+# ------------------------------------------------------------
+run_bench() {
     local cmd="$1"
     local label="$2"
-    local full_log="$RESULT_DIR/${label}_full.log"
+    local timeseries="$RESULT_DIR/${label}_timeseries.csv"
 
-    echo "========================================" | tee -a "$full_log"
-    echo "📊 Benchmark: $label (sudo)" | tee -a "$full_log"
-    echo "🔧 Command: sudo $cmd" | tee -a "$full_log"
-    echo "⏰ Start: $(date)" | tee -a "$full_log"
-    echo "----------------------------------------" | tee -a "$full_log"
+    # Header with columns: timestamp_abs, elapsed_sec, cpu_pct, rss_mb, vsz_mb
+    echo "timestamp_abs,elapsed_sec,cpu_pct,rss_mb,vsz_mb" > "$timeseries"
 
-    sudo /usr/bin/time -v bash -c "$cmd" > >(tee -a "$full_log") 2>&1
+    echo "========================================"
+    echo "📊 Benchmark: $label"
+    echo "🔧 Command: $cmd"
+    echo "⏰ Start: $(date)"
+    echo "----------------------------------------"
 
-    echo "----------------------------------------" | tee -a "$full_log"
-    echo "✅ End: $(date)" | tee -a "$full_log"
-    echo "" >> "$full_log"
+    eval "$cmd" &
+    local bench_pid=$!
+    sleep 2
+
+    monitor_process "$label" "$timeseries" "sudo" "$bench_pid" &
+    local monitor_pid=$!
+
+    wait "$bench_pid"
+    local exit_code=$?
+
+    kill -TERM "$monitor_pid" 2>/dev/null
+    wait "$monitor_pid" 2>/dev/null
+
+    echo "----------------------------------------"
+    echo "✅ End: $(date) (exit code: $exit_code)"
+    echo "📈 Time series saved to: $timeseries"
+    echo ""
 }
 
 # ------------------------------------------------------------
-# Run a benchmark command as the normal vagrant user
-# ------------------------------------------------------------
-run_bench_user() {
-    local cmd="$1"
-    local label="$2"
-    local full_log="$RESULT_DIR/${label}_full.log"
-
-    echo "========================================" | tee -a "$full_log"
-    echo "📊 Benchmark: $label (user)" | tee -a "$full_log"
-    echo "🔧 Command: $cmd" | tee -a "$full_log"
-    echo "⏰ Start: $(date)" | tee -a "$full_log"
-    echo "----------------------------------------" | tee -a "$full_log"
-
-    /usr/bin/time -v bash -c "$cmd" > >(tee -a "$full_log") 2>&1
-
-    echo "----------------------------------------" | tee -a "$full_log"
-    echo "✅ End: $(date)" | tee -a "$full_log"
-    echo "" >> "$full_log"
-}
-
-# ------------------------------------------------------------
-# Consolidate collected metrics into a CSV file
-# ------------------------------------------------------------
-consolidate_results() {
-    local dir="$1"
-    local csv_file="$dir/benchmark_summary.csv"
-    local distro=$(hostname)
-
-    echo "📊 Consolidating metrics into $csv_file ..."
-    echo "distribution,tool,elapsed_seconds,user_cpu_seconds,system_cpu_seconds,cpu_percent,max_memory_mb,voluntary_context_switches,involuntary_context_switches,major_page_faults,minor_page_faults" > "$csv_file"
-
-    for full_log in "$dir"/*_full.log; do
-        [ -f "$full_log" ] || continue
-
-        tool=$(basename "$full_log" | sed 's/_full\.log$//')
-
-        elapsed_line=$(grep "Elapsed (wall clock) time" "$full_log" | head -1)
-        if [ -n "$elapsed_line" ]; then
-            elapsed_raw=$(echo "$elapsed_line" | awk -F': ' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//' | tr -d ' ')
-            elapsed_sec=$(echo "$elapsed_raw" | awk '
-                /^[0-9]+:[0-9]+:[0-9]+\.[0-9]+$/ { split($0,a,":"); print a[1]*3600 + a[2]*60 + a[3] }
-                /^[0-9]+:[0-9]+\.[0-9]+$/     { split($0,a,":"); print a[1]*60 + a[2] }
-                /^[0-9]+\.[0-9]+$/            { print $0 }
-                /^[0-9]+$/                    { print $0 }
-            ')
-            [ -z "$elapsed_sec" ] && elapsed_sec=""
-        else
-            elapsed_sec=""
-        fi
-
-        user_raw=$(grep "User time (seconds)" "$full_log" | head -1 | awk -F': ' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//')
-        sys_raw=$(grep "System time (seconds)" "$full_log" | head -1 | awk -F': ' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//')
-        cpu_raw=$(grep "Percent of CPU this job got" "$full_log" | head -1 | awk -F': ' '{print $2}' | sed 's/%//;s/^[ \t]*//;s/[ \t]*$//')
-        max_rss_kb=$(grep "Maximum resident set size (kbytes)" "$full_log" | head -1 | awk -F': ' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//')
-        vol_cs=$(grep "Voluntary context switches" "$full_log" | head -1 | awk -F': ' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//')
-        invol_cs=$(grep "Involuntary context switches" "$full_log" | head -1 | awk -F': ' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//')
-        major_pf=$(grep "Major (requiring I/O) page faults" "$full_log" | head -1 | awk -F': ' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//')
-        minor_pf=$(grep "Minor (reclaiming a frame) page faults" "$full_log" | head -1 | awk -F': ' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//')
-
-        user_sec=$(echo "$user_raw" | awk '{printf "%.2f", $1}')
-        sys_sec=$(echo "$sys_raw" | awk '{printf "%.2f", $1}')
-        if [ -n "$elapsed_sec" ]; then
-            elapsed_sec=$(echo "$elapsed_sec" | awk '{printf "%.2f", $1}')
-        fi
-        cpu_pct=$(echo "$cpu_raw" | awk '{printf "%.0f", $1}')
-        if [ -n "$max_rss_kb" ] && [ "$max_rss_kb" -gt 0 ] 2>/dev/null; then
-            max_rss_mb=$(echo "$max_rss_kb" | awk '{printf "%.1f", $1/1024}')
-        else
-            max_rss_mb=""
-        fi
-
-        echo "$distro,$tool,$elapsed_sec,$user_sec,$sys_sec,$cpu_pct,$max_rss_mb,$vol_cs,$invol_cs,$major_pf,$minor_pf" >> "$csv_file"
-    done
-
-    echo "✅ CSV summary generated at: $csv_file"
-}
-
-# ------------------------------------------------------------
-# Start benchmark section
+# START OF BENCHMARKS
 # ------------------------------------------------------------
 echo "=========================================="
 echo "🔥 Starting benchmarks on $(hostname)"
-echo "📁 Results directory: $RESULT_DIR"
+echo "📁 Results in: $RESULT_DIR"
 echo "=========================================="
 
-run_bench_sudo "trivy fs / --scanners vuln --exit-code 0 --no-progress -f table --skip-files '**/*.pom' --skip-files '**/pom.xml' > \"$RESULT_DIR/trivy_report.txt\" 2>&1" "trivy"
-run_bench_sudo "grype dir:/ --scope squashed -o table > \"$RESULT_DIR/grype_report.txt\" 2>&1" "grype"
-run_bench_sudo "vuls scan && vuls report -format-full-text > \"$RESULT_DIR/vuls_report.txt\" 2>&1" "vuls"
+run_bench "sudo trivy fs / --scanners vuln --exit-code 0 --no-progress -f table > \"$RESULT_DIR/trivy_report.txt\" 2>&1" "trivy"
+
+run_bench "sudo grype dir:/ --scope squashed -o table > \"$RESULT_DIR/grype_report.txt\" 2>&1" "grype"
+
+run_bench "sudo vuls scan && sudo vuls report -format-full-text > \"$RESULT_DIR/vuls_report.txt\" 2>&1" "vuls"
 
 if [ -x "/home/vagrant/mirak-app/mirak" ] && [ -f "/home/vagrant/mirak-app/api_key.txt" ]; then
-    run_bench_user "/home/vagrant/mirak-app/mirak -f /home/vagrant/mirak-app/api_key.txt > \"$RESULT_DIR/mirak_report.txt\" 2>&1" "mirak"
+    run_bench "/home/vagrant/mirak-app/mirak -f /home/vagrant/mirak-app/api_key.txt > \"$RESULT_DIR/mirak_report.txt\" 2>&1" "mirak"
 else
-    echo "⚠️  mirak or api_key.txt not found. Skipping mirak benchmark." | tee -a "$RESULT_DIR/erros.log"
+    echo "⚠️  mirak or api_key.txt not found. Skipping." | tee -a "$RESULT_DIR/errors.log"
 fi
 
 echo "=========================================="
-echo "🏁 All benchmarks completed"
-echo "📂 Results directory: $RESULT_DIR"
+echo "🏁 All benchmarks completed!"
+echo "📂 Results in: $RESULT_DIR"
+echo "   - *_report.txt        → raw tool report"
+echo "   - *_timeseries.csv    → timestamp_abs, elapsed_sec, cpu_pct, rss_mb, vsz_mb"
 echo "=========================================="
-
-consolidate_results "$RESULT_DIR"
-echo "✅ Benchmark process finished. Summary CSV at: $RESULT_DIR/benchmark_summary.csv"

@@ -13,7 +13,7 @@ BOXES = {
     pkg_install: 'dnf install -y',
     devel_pkgs: 'curl git gcc gcc-c++ make wget ca-certificates',
     sudo_group: 'wheel',
-    extra_pkgs: '',
+    extra_pkgs: 'bc sysstat psmisc',
     go_arch: 'linux-amd64'
   },
   debian: {
@@ -24,7 +24,7 @@ BOXES = {
     pkg_install: 'apt install -y',
     devel_pkgs: 'curl git build-essential sudo wget apt-transport-https ca-certificates software-properties-common',
     sudo_group: 'sudo',
-    extra_pkgs: '',
+    extra_pkgs: 'bc sysstat psmisc',
     go_arch: 'linux-amd64'
   },
   ubuntu: {
@@ -46,7 +46,7 @@ BOXES = {
     pkg_install: 'apt install -y',
     devel_pkgs: 'curl git build-essential sudo wget apt-transport-https ca-certificates software-properties-common',
     sudo_group: 'sudo',
-    extra_pkgs: '',
+    extra_pkgs: 'bc sysstat psmisc',
     go_arch: 'linux-amd64'
   },
   bionic: {
@@ -57,7 +57,7 @@ BOXES = {
     pkg_install: 'apt install -y',
     devel_pkgs: 'curl git build-essential sudo wget apt-transport-https ca-certificates software-properties-common',
     sudo_group: 'sudo',
-    extra_pkgs: '',
+    extra_pkgs: 'bc sysstat psmisc',
     go_arch: 'linux-amd64'
   }
 }

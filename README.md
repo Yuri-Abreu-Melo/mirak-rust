@@ -190,11 +190,26 @@ The MIRAK binary resides in the vagrant user's HOME directory (`/home/vagrant/mi
 
 #### Running Benchmark Tests
 
-Inside each VM, run the benchmark script as the vagrant user:
+The benchmark script provides comprehensive performance evaluation of MIRAK against industry-standard vulnerability scanners. It measures and compares resource usage (CPU, memory) and execution time across multiple scanning tools.
+
+**Execute the benchmark script:**
 
 ```
-bash /home/vagrant/benchmark_script.sh
+./benchmark_script.sh
 ```
+
+**Included Benchmark Comparisons:**
+- **MIRAK**: Custom RPKI vulnerability scanner
+- **Trivy**: Container and filesystem scanner
+- **Grype**: SBOM-based vulnerability detection
+- **Vuls**: Operating system vulnerability scanner
+
+**Benchmark Output:**
+The script generates timestamped result directories in `benchmarks/YYYYMMDD_HHMMSS_hostname/` containing:
+- `*_report.txt`: Raw vulnerability scanner output
+- `*_timeseries.csv`: Performance metrics (timestamp, elapsed time, CPU usage, memory consumption)
+
+Each benchmark run creates a unique timestamped folder to preserve multiple test results, enabling comparative analysis and performance tracking over time.
 
 ### Architecture
 
