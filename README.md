@@ -1,74 +1,72 @@
-# Mirak: BGP RPKI Validator Vulnerability Scanner
+# MIRAK: RPKI Validator Vulnerability Scanner
 
-## Abstract
+![MIRAK](./assets/media/mirak-crest.jpeg)
 
-Mirak is a vulnerability scanner engineered in Rust, specifically designed to audit BGP RPKI validator implementations such as Routinator. The tool enables rapid identification of security vulnerabilities in critical internet routing infrastructure, providing security researchers and network administrators with automated validation capabilities.
+<div align="center">
 
-## Introduction
+[![Linux](https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black)](https://www.linux.org/)
+[![Rust](https://img.shields.io/badge/Rust-CE422B?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Routinator](https://img.shields.io/badge/Routinator-4A90E2?style=for-the-badge)](https://www.nlnetlabs.nl/projects/routinator/about/)
+[![IEEE Access](https://img.shields.io/badge/IEEE%20Access-00629B?style=for-the-badge)](https://ieeeaccess.ieee.org/)
 
-Border Gateway Protocol (BGP) security relies heavily on Resource Public Key Infrastructure (RPKI) validators to prevent route hijacking and prefix misappropriation. The Routinator RPKI validator, a critical component in this ecosystem, has been subject to various security vulnerabilities. Mirak addresses the critical need for automated security auditing of these BGP infrastructure components, providing a reliable tool to validate RPKI validator deployments.
+</div>
 
-## System Architecture and Testing Environment
+## Demo
 
-### Virtual Machine Infrastructure
+https://github.com/Yuri-Abreu-Melo/mirak-rust/assets/media/mirak-demo.mp4
 
-The testing environment provisions three distinct Linux distributions:
+## Overview
 
+This repository contains MIRAK, a Rust-based vulnerability scanner designed to audit RPKI (Resource Public Key Infrastructure) validator implementations, such as Routinator. The artifact provides non-intrusive security auditing capabilities for RPKI validator deployments, enabling security researchers and network administrators to identify vulnerabilities in deployed validator software.
+
+The associated paper, *"MIRAK: Enhancing Security and Resilience in RPKI and BGP Routing Ecosystems"*, presents an approach for predictive vulnerability auditing of RPKI validation environments. By integrating domain-specific knowledge of the RPKI ecosystem, MIRAK addresses limitations found in traditional vulnerability scanners, which may fail to accurately identify vulnerabilities in RPKI-specific components due to inaccuracies in the generation and mapping of **CPE (Common Platform Enumeration)** identifiers. The artifact is intended to enable researchers and operators to audit RPKI validator deployments, identify applicable **CVEs (Common Vulnerabilities and Exposures)**, and evaluate the security of critical routing infrastructure through an automated and reproducible workflow.
+
+### Paper Abstract
+
+*RPKI (Resource Public Key Infrastructure) has become the standard mechanism for mitigating BGP (Border Gateway Protocol) prefix hijacking in the global interdomain routing infrastructure. However, the security of the validation infrastructure itself, particularly RPKI Relying Party implementations, has emerged as a critical attack surface, where unidentified vulnerabilities may compromise the integrity of the routing ecosystem. This paper presents MIRAK, a predictive auditing artifact designed to non-intrusively identify vulnerabilities in RPKI validation environments and detect software components susceptible to exploitation. By incorporating domain-specific knowledge, the artifact overcomes limitations of traditional vulnerability scanners that fail to accurately map components of the RPKI ecosystem due to inaccuracies in CPE (Common Platform Enumeration) string generation. Experimental evaluations conducted on real-world scenarios based on the Routinator validator demonstrate the effectiveness of the approach compared with Vuls, Trivy, and Grype, achieving a 100% higher detection rate in identifying applicable CVEs.*
+
+## Requirements
+
+MIRAK requires the following system dependencies to function properly:
+
+### Operating System
+MIRAK is tested and compatible with:
 - **Ubuntu 22.04 LTS** (Jammy)
 - **Debian 12** (Bookworm)
 - **Fedora 43**
 
-Each virtual machine is configured with 2GB of RAM and 2 CPU cores, providing adequate resources for comprehensive vulnerability scanning tests.
+### System Specifications
+- Minimum 2GB RAM
+- 2 CPU cores
+- x86_64 Linux architecture
 
-### Deployment Procedure
+### Build Dependencies
 
-#### Binary Distribution
-
-The compiled Mirak binary must be placed within the `mirak-app` directory located inside `vagrant-VM's/`. This directory already contains the required API key file (`api_key.txt`) necessary for scanner authentication and operation.
-
-#### Building the Mirak Binary
-
-##### Prerequisites
-
-**Required System Dependencies:**
-
-**musl (Ubuntu/Debian):**
-
-```
-sudo apt install musl-tools
-```
-
-**musl (Fedora):**
-
-```
-sudo dnf install musl-gcc
-```
-
-**musl (Arch Linux):**
-
-```
-sudo pacman -S musl
-```
-
-**Rust Build Environment Setup:**
+#### Rust Build Environment Setup
 
 ```
 rustup target add x86_64-unknown-linux-musl
 ```
 
-##### Standard Build (Command-Line Interface)
-
-To compile Mirak without graphical interface support (statically linked with musl):
+#### musl (Ubuntu/Debian)
 
 ```
-cargo build --release --target x86_64-unknown-linux-musl
+sudo apt install musl-tools
 ```
 
-##### GUI-Enabled Build
+#### musl (Fedora)
 
-**Important**: GUI builds CANNOT use musl due to GTK4 dynamic linking requirements. The build must target the native system architecture.
+```
+sudo dnf install musl-gcc
+```
 
-**Install GTK4 Development Libraries:**
+#### musl (Arch Linux)
+
+```
+sudo pacman -S musl
+```
+
+#### GTK4 Development Libraries (for GUI builds)
 
 **GTK4 (Ubuntu/Debian):**
 
@@ -88,6 +86,22 @@ sudo dnf install gtk4-devel pkgconfig
 sudo pacman -S gtk4 pkg-config
 ```
 
+## Installation
+
+### Building from Source
+
+#### Standard Build (Command-Line Interface)
+
+To compile MIRAK without graphical interface support (statically linked with musl):
+
+```
+cargo build --release --target x86_64-unknown-linux-musl
+```
+
+#### GUI-Enabled Build
+
+**Important**: GUI builds CANNOT use musl due to GTK4 dynamic linking requirements. The build must target the native system architecture.
+
 **Build with GUI Features Enabled (native target):**
 
 ```
@@ -96,16 +110,20 @@ cargo build --release --features gui
 
 **Note**: GUI builds require GTK4 runtime libraries to be present on the target system. The resulting binary will be dynamically linked against system libraries, unlike the musl-based static build.
 
-### Alternative: Pre-built Binaries
+### Pre-built Binaries
 
 Pre-compiled binaries are available through the project's GitHub Releases page:
 
 - **CLI version**: Statically linked with musl for maximum compatibility
 - **GUI version**: Dynamically linked against GTK4 (requires GTK4 runtime)
 
-## Testing Methodology
+## Usage
 
-### Virtual Machine Management
+### Testing Environment Setup
+
+MIRAK provides comprehensive testing through a virtualized environment using Vagrant. This approach enables reproducible security auditing across multiple Linux distributions.
+
+#### Virtual Machine Management
 
 **Navigate to the Vagrant directory:**
 
@@ -114,12 +132,6 @@ cd vagrant-VM's/
 ```
 
 The benchmark runner script is stored in `vagrant-VM's/benchmark_script.sh` and mounted directly into each VM through `/vagrant`. Vagrant provisioning also creates a symbolic link for the `mirak-app` directory at `/home/vagrant/mirak-app`, so no application files or API key are copied into the guest filesystem.
-
-Inside each VM, run the benchmark script as the vagrant user:
-
-```
-bash /home/vagrant/benchmark_script.sh
-```
 
 **Initialize and provision the virtual machines:**
 
@@ -147,11 +159,9 @@ vagrant ssh debian
 vagrant ssh fedora
 ```
 
-### Execution Procedures
+#### Running the Scanner
 
-#### Scanner Command Structure
-
-The Mirak binary resides in the vagrant user's HOME directory (`/home/vagrant/mirak-app/`) and supports the following execution modes:
+The MIRAK binary resides in the vagrant user's HOME directory (`/home/vagrant/mirak-app/`) and supports the following execution modes:
 
 **Display Help Menu:**
 
@@ -178,20 +188,19 @@ The Mirak binary resides in the vagrant user's HOME directory (`/home/vagrant/mi
 - `-f`: Specify API key file path (CLI mode)
 - `-g`: Launch graphical user interface (API key will be requested in GUI)
 
-### Vulnerability Detection Configuration
+#### Running Benchmark Tests
 
-The scanner specifically targets CVE-2024-1622, affecting Routinator RPKI validator versions up to 0.12.2. The Routinator version is configurable within the Vagrantfile:
-
-**Modify Routinator version in Vagrantfile:**
+Inside each VM, run the benchmark script as the vagrant user:
 
 ```
-cargo install routinator@0.12.2
+bash /home/vagrant/benchmark_script.sh
 ```
 
-## Technical Architecture
+### Architecture
 
-### Core Components
+MIRAK is engineered with the following technical characteristics:
 
+**Core Components:**
 - **Language**: Rust (memory-safe systems programming)
 - **Target Platforms**:
   - CLI: x86_64 Linux (musl-based static binaries)
@@ -201,36 +210,27 @@ cargo install routinator@0.12.2
   - **Security Tools**: Trivy, Grype, Vuls (additional vulnerability scanners)
   - **GTK4**: GUI framework (required for GUI builds)
 
-### Build Characteristics
-
+**Build Characteristics:**
 - **Memory Safety**: Rust's ownership model eliminates buffer overflow vulnerabilities
 - **CLI Build**: Static linking with musl for cross-distribution compatibility
 - **GUI Build**: Dynamic linking against system GTK4 libraries
 
-## Continuous Integration and Deployment Integration
+### Vagrant Provisioning
 
 The Vagrant provisioning process automatically configures:
 
-### Security Tool Installation
-
+**Security Tool Installation:**
 - **Trivy**: Container and filesystem vulnerability scanner
 - **Grype**: SBOM-based vulnerability detection
 - **Vuls**: Vulnerability scanner for operating systems
 
-### Development Environment
-
+**Development Environment:**
 - Build-essential packages (GCC, Make, Git)
 - Required system libraries and headers
 - Network configuration for public network access
 
 This comprehensive setup enables seamless integration into CI/CD pipelines, allowing organizations to automate security validation of their BGP infrastructure.
 
-## Security Considerations
+## License
 
-- **CVE-2024-1622**: Routinator RPKI validator vulnerability
-- **Impact**: Affects BGP route validation integrity
-- **Mitigation**: Mirak enables rapid identification of vulnerable deployments
-
-## Conclusion
-
-Mirak provides network security professionals with a robust solution for auditing BGP RPKI validator implementations. By combining Rust's safety guarantees with comprehensive vulnerability detection capabilities, Mirak addresses the critical need for automated security validation in modern internet routing infrastructure.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
