@@ -13,7 +13,7 @@
 
 ## Demo
 
-https://github.com/Yuri-Abreu-Melo/mirak-rust/assets/media/mirak-demo.mp4
+[![Watch the video](https://raw.githubusercontent.com/Yuri-Abreu-Melo/mirak-rust/main/assets/media/mirak-crest.jpeg)](https://raw.githubusercontent.com/Yuri-Abreu-Melo/mirak-rust/main/assets/media/mirak-demo.mp4)
 
 ## Overview
 
