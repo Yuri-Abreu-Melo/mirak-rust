@@ -1,5 +1,8 @@
 use crate::{
-    cpe::apps::{PackageManager, find_installed_apps, normalize_package_name, normalize_version},
+    cpe::apps::{
+        PackageInfo, PackageManager, find_installed_apps, normalize_package_name,
+        normalize_version,
+    },
     extractors::os,
 };
 
@@ -35,6 +38,31 @@ fn get_cpe_mapping() -> HashMap<&'static str, (&'static str, &'static str)> {
         ("zlib1g", ("zlib", "zlib")),
         ("expat", ("libexpat", "expat")),
     ])
+}
+
+fn get_validator_cpe(package: &PackageInfo) -> Option<String> {
+    let version = normalize_version(&package.version);
+
+    if package.distributor == "nlnetlabs" || package.name.contains("routinator") {
+        return Some(format!(
+            "cpe:2.3:a:nlnetlabs:routinator:{}:*:*:*:*:*:*:*",
+            version
+        ));
+    }
+
+    let is_fort_validator = [&package.name, &package.source_name].iter().any(|name| {
+        matches!(
+            name.to_ascii_lowercase().as_str(),
+            "fort" | "fort-validator" | "fort_validator"
+        )
+    });
+
+    is_fort_validator.then(|| {
+        format!(
+            "cpe:2.3:a:nicmx:fort_validator:{}:*:*:*:*:*:*:*",
+            version
+        )
+    })
 }
 
 /// Build CPEs for installed applications and OS
@@ -118,15 +146,8 @@ pub fn build_cpe() -> Vec<String> {
     let mapping = get_cpe_mapping();
 
     for package in packages.unwrap() {
-        // --- ROUTINATOR / NLNETLABS especial ---
-        // If the package was explicitly marked as routinator by the collector,
-        // we already have the correct vendor and product.
-        if package.distributor == "nlnetlabs" || package.name.contains("routinator") {
-            let version = normalize_version(&package.version);
-            cpes.push(format!(
-                "cpe:2.3:a:nlnetlabs:routinator:{}:*:*:*:*:*:*:*",
-                version
-            ));
+        if let Some(cpe) = get_validator_cpe(&package) {
+            cpes.push(cpe);
             cpe_count += 1;
             continue;
         }
@@ -231,13 +252,8 @@ pub fn build_cpe_gui() -> Vec<String> {
     
     let mapping = get_cpe_mapping();
     for package in packages.unwrap() {
-        // Routinator special treatment
-        if package.distributor == "nlnetlabs" || package.name.contains("routinator") {
-            let version = normalize_version(&package.version);
-            cpes.push(format!(
-                "cpe:2.3:a:nlnetlabs:routinator:{}:*:*:*:*:*:*:*",
-                version
-            ));
+        if let Some(cpe) = get_validator_cpe(&package) {
+            cpes.push(cpe);
             continue;
         }
 
@@ -263,4 +279,25 @@ pub fn build_cpe_gui() -> Vec<String> {
     
     let _ = write_cpes_to_file(&cpes, "cpes.mirak");
     cpes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_validator_cpe;
+    use crate::cpe::apps::PackageInfo;
+
+    #[test]
+    fn fort_validator_uses_nicmx_vendor_and_nvd_product() {
+        let package = PackageInfo {
+            name: "fort".to_string(),
+            version: "1.6.6-1".to_string(),
+            distributor: "NICMx".to_string(),
+            source_name: "fort_validator".to_string(),
+        };
+
+        assert_eq!(
+            get_validator_cpe(&package).as_deref(),
+            Some("cpe:2.3:a:nicmx:fort_validator:1.6.6:*:*:*:*:*:*:*")
+        );
+    }
 }
