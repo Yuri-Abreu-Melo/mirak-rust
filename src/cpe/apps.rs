@@ -180,29 +180,24 @@ impl PackageManager {
     }
 }
 
-/// Remove common distro prefixes/suffixes that are not part of upstream name
-pub fn normalize_package_name(raw: &str) -> String {
-    let mut name = raw.to_lowercase();
-    for prefix in &["python3-", "python-", "ruby-", "perl-", "php-", "lua-"] {
-        if let Some(stripped) = name.strip_prefix(prefix) {
-            name = stripped.to_string();
-            break;
-        }
-    }
-    for suffix in &["-dev", "-doc", "-common", "-data", "-bin"] {
-        if let Some(stripped) = name.strip_suffix(suffix) {
-            name = stripped.to_string();
-            break;
-        }
-    }
-    name
-}
-
 /// Remove distribution release suffix (everything after first '-' followed by digit)
 pub fn normalize_version(version: &str) -> String {
+    let version = version
+        .split_once(':')
+        .map_or(version, |(_, upstream_version)| upstream_version);
     if let Some(pos) = version.find('-') {
         version[..pos].to_string()
     } else {
         version.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_version;
+
+    #[test]
+    fn normalize_version_removes_package_epoch_and_release_suffix() {
+        assert_eq!(normalize_version("1:0.15.3-1ubuntu1"), "0.15.3");
     }
 }

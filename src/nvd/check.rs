@@ -191,7 +191,7 @@ pub async fn check_vulnerabilities(
     cpes: Vec<String>,
     os_cpe: String,
     key: &str,
-) -> (HashMap<String, Vec<CVEDataReport>>, HashMap<String, i64>) {
+) -> Result<(HashMap<String, Vec<CVEDataReport>>, HashMap<String, i64>), String> {
     let mut all_vulnerabilities: HashMap<String, Vec<CVEDataReport>> = HashMap::new();
     let mut issues: HashMap<String, i64> = HashMap::new();
     let total_cpes = cpes.len();
@@ -209,7 +209,7 @@ pub async fn check_vulnerabilities(
 
     for (index, cpe) in cpes.iter().enumerate() {
         let (vuln_map, issue_source, issues_qtd) =
-            check_vulnerabilities_for_cpe(os_cpe.as_str(), cpe.as_str(), key, &cpes).await;
+            check_vulnerabilities_for_cpe(os_cpe.as_str(), cpe.as_str(), key, &cpes).await?;
 
         // Mescla as vulnerabilidades encontradas
         for (cve_id, cve_data_list) in vuln_map {
@@ -239,25 +239,28 @@ pub async fn check_vulnerabilities(
         "\n{}",
         "[ OK ] Scan completed successfully!".bright_green().bold()
     );
-    (all_vulnerabilities, issues)
+    Ok((all_vulnerabilities, issues))
 }
 
 // This function receives an array with all installed broke in small pieces and then fire the check
 // for vulnerabilities with threads
-pub async fn check(cpes: Vec<String>, key: String) -> HashMap<String, Vec<CVEDataReport>> {
+pub async fn check(
+    cpes: Vec<String>,
+    key: String,
+) -> Result<HashMap<String, Vec<CVEDataReport>>, String> {
     let mut all_vulnerabilities: HashMap<String, Vec<CVEDataReport>> = HashMap::new();
     let mut final_issues: HashMap<String, i64> = HashMap::new();
 
     println!("{}", "[INFO] Validating NVD API KEY...".bright_yellow().bold());
 
-    if looks_like_nvd_api_key(key.as_str()) {
+    if looks_like_nvd_api_key(key.as_str()) && !cpes.is_empty() {
         println!(
             "{}",
             "[ OK ] NVD API KEY validated successfully!".bright_green()
         );
         println!("{}", "[INFO] Reading cpes.mirak...".bright_cyan());
-        let os_cpe = cpes.first().unwrap().to_owned();
-        let (vulnerabilities, issues) = check_vulnerabilities(cpes, os_cpe.to_string(), &key).await;
+        let os_cpe = cpes.first().cloned().unwrap_or_default();
+        let (vulnerabilities, issues) = check_vulnerabilities(cpes, os_cpe, &key).await?;
 
         for (cve_id, cve_data_list) in vulnerabilities {
             all_vulnerabilities
@@ -278,7 +281,7 @@ pub async fn check(cpes: Vec<String>, key: String) -> HashMap<String, Vec<CVEDat
                 .bright_red()
                 .bold()
         );
-        return all_vulnerabilities;
+        return Err("Invalid NVD API key or empty validator CPE inventory.".to_string());
     }
 
     let total: i64 = final_issues.values().sum();
@@ -315,7 +318,7 @@ pub async fn check(cpes: Vec<String>, key: String) -> HashMap<String, Vec<CVEDat
         "═══════════════════════════════════════════".bright_magenta()
     );
 
-    all_vulnerabilities
+    Ok(all_vulnerabilities)
 }
 
 /// The function that inspect the returning of NVD api
@@ -324,9 +327,9 @@ async fn check_vulnerabilities_for_cpe(
     cpe: &str,
     key: &str,
     inventory: &[String],
-) -> (HashMap<String, Vec<CVEDataReport>>, String, i64) {
+) -> Result<(HashMap<String, Vec<CVEDataReport>>, String, i64), String> {
     // Get the informations about the given CPE
-    let result = nvd::search::search_cves_by_cpe(cpe, key).await;
+    let result = nvd::search::search_cves_by_cpe(cpe, key).await?;
 
     let mut vulnerabilities: HashMap<String, Vec<CVEDataReport>> = HashMap::new();
     let mut issue_source = String::from("");
@@ -417,7 +420,7 @@ async fn check_vulnerabilities_for_cpe(
         );
     }
 
-    (vulnerabilities, issue_source, issues_qtd)
+    Ok((vulnerabilities, issue_source, issues_qtd))
 }
 
 #[derive(Debug, Clone, PartialEq)]

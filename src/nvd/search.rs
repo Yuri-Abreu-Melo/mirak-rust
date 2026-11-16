@@ -2,8 +2,11 @@ use crate::nvd::structs::cpe_name_search::NVDReponseCPEName;
 use std::time::Duration;
 
 /// Hits the NVD api to get information about CPE and convert to JSON
-pub async fn search_cves_by_cpe(cpe: &str, key: &str) -> NVDReponseCPEName {
-    let client = reqwest::Client::builder().use_rustls_tls().build().unwrap();
+pub async fn search_cves_by_cpe(cpe: &str, key: &str) -> Result<NVDReponseCPEName, String> {
+    let client = reqwest::Client::builder()
+        .use_rustls_tls()
+        .build()
+        .map_err(|error| format!("Could not create NVD HTTP client: {error}"))?;
     let page_size = 2_000;
     let mut start_index = 0;
     let mut combined = NVDReponseCPEName::default();
@@ -24,7 +27,7 @@ pub async fn search_cves_by_cpe(cpe: &str, key: &str) -> NVDReponseCPEName {
                 .header("apiKey", key)
                 .send()
                 .await
-                .expect("NVD CVE request failed");
+                .map_err(|error| format!("NVD CVE request failed: {error}"))?;
 
             if matches!(
                 response.status(),
@@ -47,12 +50,12 @@ pub async fn search_cves_by_cpe(cpe: &str, key: &str) -> NVDReponseCPEName {
 
             break response
                 .error_for_status()
-                .expect("NVD CVE request returned an error status");
+                .map_err(|error| format!("NVD CVE request returned an error status: {error}"))?;
         };
         let response = response
             .json::<NVDReponseCPEName>()
             .await
-            .expect("NVD CVE response could not be parsed");
+            .map_err(|error| format!("NVD CVE response could not be parsed: {error}"))?;
         let page_len = response.vulnerabilities.len();
 
         if start_index == 0 {
@@ -65,13 +68,12 @@ pub async fn search_cves_by_cpe(cpe: &str, key: &str) -> NVDReponseCPEName {
         if received >= combined.total_results {
             break;
         }
-        assert!(
-            page_len > 0,
-            "NVD pagination returned an empty page before completion"
-        );
+        if page_len == 0 {
+            return Err("NVD pagination returned an empty page before completion.".to_string());
+        }
         start_index = received;
     }
 
     combined.results_per_page = combined.vulnerabilities.len() as i64;
-    combined
+    Ok(combined)
 }

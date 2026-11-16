@@ -8,6 +8,7 @@ mod extractors;
 mod nvd;
 mod report;
 mod routinator;
+mod security_scan;
 
 #[cfg(feature = "gui")]
 mod gui;
@@ -16,17 +17,16 @@ mod gui;
 #[command(
     name = "MIRAK",
     version = "0.1.0",
-    about = "Scans system binaries for vulnerabilities using NVD and generates reports",
-    long_about = "Scans system binaries for vulnerabilities using NVD and generates reports. \n
-A command-line tool that analyzes installed system binaries, queries the NVD database for known \
-vulnerabilities, and generates a structured security report."
+    about = "Scans Routinator and Fort for known vulnerabilities",
+    long_about = "Checks official Routinator and Fort security advisories, Rust dependency \
+vulnerabilities, and optionally cross-checks NVD."
 )]
 struct Cli {
-    /// NVD API key provided directly via command line
+    /// Optional NVD API key for supplementary cross-checks
     #[arg(short, long, value_name = "API_KEY")]
     key: Option<String>,
 
-    /// Path to a file containing the NVD API key
+    /// Optional file containing the NVD API key
     #[arg(short = 'f', long, value_name = "FILE_PATH")]
     key_file: Option<PathBuf>,
 
@@ -36,48 +36,21 @@ struct Cli {
     gui: bool,
 }
 
-fn parse_args(cli: &Cli) -> String {
-    // Search NVD key on args
-    if cli.key.is_none() && cli.key_file.is_none() {
-        eprintln!(
-            "{}",
-            "[ERROR] Please provide a valid NVD key"
-                .bright_red()
-                .bold()
-        );
-        std::process::exit(1);
-    }
-
-    let mut nvd_key = String::from("");
-
-    if let Some(key) = &cli.key {
-        nvd_key = key.clone()
-    }
-
+fn parse_args(cli: &Cli) -> Result<Option<String>, String> {
     if let Some(key_path) = &cli.key_file {
-        match fs::read_to_string(key_path) {
-            Ok(content) => nvd_key = content.trim().to_string(),
-            Err(err) => {
-                eprintln!(
-                    "{}",
-                    format!(
-                        "[ERROR] Could not read key file '{}': {}",
-                        key_path.display(),
-                        err
-                    )
-                    .bright_red()
-                    .bold()
-                );
-                std::process::exit(1);
-            }
-        }
+        let content = fs::read_to_string(key_path).map_err(|error| {
+            format!(
+                "Could not read NVD key file '{}': {error}",
+                key_path.display()
+            )
+        })?;
+        return Ok(Some(content.trim().to_string()));
     }
-
-    nvd_key
+    Ok(cli.key.clone())
 }
 
-async fn validate(cli: &Cli) {
-    let nvd_key = parse_args(cli);
+async fn validate(cli: &Cli) -> Result<(), String> {
+    let nvd_key = parse_args(cli)?;
 
     println!(
         "\n{}",
@@ -110,27 +83,33 @@ async fn validate(cli: &Cli) {
         "[ OK ] Routinator data validation completed successfully\n".bright_green()
     );
 
-    // Search for vulnerabilities in all installed apps
+    // Scan only the supported RPKI validators and their identifiable dependencies.
     println!(
         "{}",
-        "[INFO] Scanning operating system binaries for vulnerabilities...\n"
+        "[INFO] Scanning Routinator, Fort, and their dependencies...\n"
             .bright_blue()
             .bold()
     );
 
-    let nvd_result = nvd::check::check(cpe::builder::build_cpe(), nvd_key).await;
+    let scan_result = security_scan::scan(nvd_key.as_deref()).await?;
+    for warning in &scan_result.warnings {
+        eprintln!("{} {}", "[WARN]".bright_yellow().bold(), warning);
+    }
 
     println!(
         "\n{}",
-        "[INFO] Processing vulnerability report...".bright_blue().bold()
+        "[INFO] Processing vulnerability report..."
+            .bright_blue()
+            .bold()
     );
 
-    report::make_report(nvd_result);
+    report::make_report(&scan_result.findings)?;
 
     println!(
         "\n{}",
         "[ OK ] Scan completed successfully!".bright_green().bold()
     );
+    Ok(())
 }
 
 #[tokio::main]
@@ -141,9 +120,15 @@ async fn main() {
     if gui::check_gui(&cli) {
         gui::gui();
     } else {
-        validate(&cli).await;
+        if let Err(error) = validate(&cli).await {
+            eprintln!("{} {}", "[ERROR]".bright_red().bold(), error);
+            std::process::exit(1);
+        }
     }
 
     #[cfg(not(feature = "gui"))]
-    validate(&cli).await;
+    if let Err(error) = validate(&cli).await {
+        eprintln!("{} {}", "[ERROR]".bright_red().bold(), error);
+        std::process::exit(1);
+    }
 }

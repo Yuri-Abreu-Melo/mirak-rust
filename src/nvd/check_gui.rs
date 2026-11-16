@@ -203,7 +203,15 @@ async fn check_vulnerabilities_for_cpe_gui(
         .ok();
 
     // Get the informations about the given CPE
-    let result = nvd::search::search_cves_by_cpe(cpe, key).await;
+    let result = match nvd::search::search_cves_by_cpe(cpe, key).await {
+        Ok(result) => result,
+        Err(error) => {
+            sender
+                .send(format!("[WARN] NVD lookup failed for {cpe}: {error}\n"))
+                .ok();
+            return (HashMap::new(), String::new(), 0);
+        }
+    };
 
     let mut vulnerabilities: HashMap<String, Vec<CVEDataReport>> = HashMap::new();
     let mut issue_source = String::from("");

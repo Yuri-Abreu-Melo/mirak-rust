@@ -1,6 +1,6 @@
 #[cfg(feature = "gui")]
 use {
-    crate::{Cli, cpe, nvd, report, routinator},
+    crate::{Cli, report, routinator, security_scan},
     gtk::{
         Application, ApplicationWindow, Box, Button, Label, Picture, ScrolledWindow, TextBuffer,
         TextView, gdk::Texture, glib, prelude::*,
@@ -26,7 +26,9 @@ pub fn build_ui(app: &Application) {
     const IMAGE_DATA: &[u8] = include_bytes!("../assets/ime-crest.png");
 
     let api_text = Label::builder().build();
-    api_text.set_markup("[INFO] Enter your NVD API Key to scan the system");
+    api_text.set_markup(
+        "[INFO] NVD API key is optional (official advisories and OSV are queried online)",
+    );
 
     let bytes = gtk::glib::Bytes::from(IMAGE_DATA);
     let texture = Texture::from_bytes(&bytes).unwrap();
@@ -75,17 +77,9 @@ pub fn build_ui(app: &Application) {
 
     let init_btn = Button::builder()
         .label("🚀 Start Scan")
-        .sensitive(false)
+        .sensitive(true)
         .margin_bottom(5)
         .build();
-
-    let api_key_buffer_clone = api_key_buffer.clone();
-    let init_btn_clone = init_btn.clone();
-    api_key_buffer_clone.connect_changed(move |buffer| {
-        let (start, end) = buffer.bounds();
-        let text = buffer.text(&start, &end, false).to_string();
-        init_btn_clone.set_sensitive(!text.trim().is_empty());
-    });
 
     init_btn.connect_clicked({
         let api_key_buffer = api_key_buffer.clone();
@@ -135,17 +129,29 @@ pub fn build_ui(app: &Application) {
                     log("[INFO] Initializing validation of Routinator data\n");
                     log(&routinator::validator::validate_gui());
                     log("[ OK ] Routinator validation completed\n\n");
-                    log("[INFO] Initializing system binaries validation\n\n");
+                    log("[INFO] Scanning Routinator, Fort, and their dependencies\n\n");
 
-                    let cpes = cpe::builder::build_cpe_gui();
-                    let nvd_result = nvd::check_gui::check_gui(cpes, nvd_key, tx.clone()).await;
-
-                    log("\n[INFO] Processing vulnerabilities report\n");
-                    report::make_report(nvd_result);
-
-                    log("\n═══════════════════════════════════════════\n");
-                    log("[ OK ] VALIDATION FINISHED SUCCESSFULLY!\n");
-                    log("═══════════════════════════════════════════\n");
+                    let key = (!nvd_key.trim().is_empty()).then_some(nvd_key.as_str());
+                    match security_scan::scan(key).await {
+                        Ok(scan_result) => {
+                            for warning in scan_result.warnings {
+                                log(&format!("[WARN] {warning}\n"));
+                            }
+                            log(&format!(
+                                "[INFO] {} finding(s) matched\n",
+                                scan_result.findings.len()
+                            ));
+                            log("\n[INFO] Processing vulnerability report\n");
+                            if let Err(error) = report::make_report(&scan_result.findings) {
+                                log(&format!("[ERROR] {error}\n"));
+                            } else {
+                                log("\n═══════════════════════════════════════════\n");
+                                log("[ OK ] VALIDATION FINISHED SUCCESSFULLY!\n");
+                                log("═══════════════════════════════════════════\n");
+                            }
+                        }
+                        Err(error) => log(&format!("[ERROR] {error}\n")),
+                    }
                 });
             });
 

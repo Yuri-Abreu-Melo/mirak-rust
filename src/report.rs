@@ -1,48 +1,63 @@
 use colored::*;
 use csv::Writer;
-use std::{collections::HashMap, env};
+use std::env;
 
-use crate::nvd::check::CVEDataReport;
+use crate::security_scan::SecurityFinding;
 
-pub fn make_report(vulnerabilities: HashMap<String, Vec<CVEDataReport>>) {
-    if vulnerabilities.is_empty() {
-        println!(
-            "{}", "[INFO] - Since no vulnerability was found in the installed apps no report will be generated".bright_green()
-        );
-    } else {
+pub fn make_report(findings: &[SecurityFinding]) -> Result<(), String> {
+    if findings.is_empty() {
         println!(
             "{}",
-            "[INFO] - Report of vulnerabilities generated".bright_green()
+            "[INFO] - No Routinator, Fort, or dependency findings were found; no report will be generated."
+                .bright_green()
         );
+        return Ok(());
+    }
 
-        let mut wtr = Writer::from_path(env::home_dir().unwrap().join("mirak_report.csv")).unwrap();
-
-        wtr.write_record([
-            "cve_id",
+    let home =
+        env::home_dir().ok_or_else(|| "Could not determine the home directory.".to_string())?;
+    let report_path = home.join("mirak_report.csv");
+    let file = std::fs::File::create(&report_path)
+        .map_err(|error| format!("Could not create {}: {error}", report_path.display()))?;
+    let mut writer = Writer::from_writer(file);
+    writer
+        .write_record([
+            "id",
+            "source",
             "product",
-            "vendor",
             "version",
-            "basescore",
-            "baseseverity",
+            "base_score",
+            "severity",
+            "status",
+            "advisory_url",
+            "evidence",
             "description",
         ])
-        .unwrap();
+        .map_err(|error| error.to_string())?;
 
-        for (cve_id, cve_data_list) in &vulnerabilities {
-            for cve_data in cve_data_list {
-                wtr.write_record([
-                    cve_id,
-                    &cve_data.product,
-                    &cve_data.vendor,
-                    &cve_data.version,
-                    &cve_data.base_score.to_string(),
-                    &cve_data.base_severity,
-                    &cve_data.description,
-                ])
-                .unwrap();
-            }
-        }
-
-        wtr.flush().unwrap();
+    for finding in findings {
+        writer
+            .write_record([
+                finding.id.as_str(),
+                finding.source.as_str(),
+                finding.product.as_str(),
+                finding.version.as_str(),
+                &finding.base_score.to_string(),
+                finding.severity.as_str(),
+                finding.status.as_str(),
+                finding.advisory_url.as_str(),
+                finding.evidence.as_str(),
+                finding.description.as_str(),
+            ])
+            .map_err(|error| error.to_string())?;
     }
+    writer
+        .flush()
+        .map_err(|error| format!("Could not write {}: {error}", report_path.display()))?;
+    println!(
+        "{} {}",
+        "[INFO] - Report generated at".bright_green(),
+        report_path.display().to_string().bright_white().bold()
+    );
+    Ok(())
 }
