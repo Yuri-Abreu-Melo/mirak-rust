@@ -119,20 +119,33 @@ Pre-compiled binaries are available through the project's GitHub Releases page:
 
 ## Usage
 
-### NVD matching behavior
+### Validator vulnerability checks
 
-MIRAK queries the NVD CVE API with `cpeName` for each generated CPE, requests
-results in pages of up to 2,000 entries, and retries rate-limit or temporary
-service responses up to three times, with a 700 ms interval between requests.
-It evaluates CPE version bounds and the
-NVD configuration tree (`AND`, `OR`, nested nodes, and negation) against the
-host CPE inventory. Rejected CVE records are excluded. Version strings that
-the version comparator cannot interpret do not match a bounded range.
+MIRAK reports findings only for Routinator, Fort, and dependencies it can
+identify for those validators. It does not scan the operating system or
+unrelated installed applications.
 
-This evaluation is limited to the CPEs MIRAK extracts from the host; it does not
-inspect arbitrary runtime relationships or configuration state. Requests are
-online and are not persistently cached; offline analysis is not currently
-supported.
+Each scan fetches the official [NLnet Labs Routinator advisories](https://www.nlnetlabs.nl/projects/routinator/security-advisories/)
+and [NICMx Fort advisories](https://nicmx.github.io/FORT-validator/CVE.html)
+and checks their affected-version ranges. A version match is reported as an
+affected-version match, not proof that the issue is exploitable; advisory
+conditions such as configuration options or build-time dependencies are
+included as evidence when available.
+
+For Rust dependencies, MIRAK reads a matching validator `Cargo.lock` or
+`cargo-auditable` metadata embedded in the validator binary, then queries
+[OSV](https://osv.dev/). It never uses MIRAK's own `Cargo.lock` as a substitute
+for Routinator's dependency inventory. If neither source can be read, the scan
+prints a warning rather than claiming that dependencies are safe.
+
+NVD is an optional supplementary source. Provide `--key` or `--key-file` to
+cross-check the validators and their identified dependencies; no NVD key is
+required for official advisories or OSV. NVD requests are online and are not
+persistently cached; offline analysis is not currently supported.
+
+The CSV report includes the source, affected product and version, match status,
+advisory URL, and evidence. CVEs are not treated as confirmed exploitable
+solely because an installed version falls within an advisory range.
 
 ### Testing Environment Setup
 
