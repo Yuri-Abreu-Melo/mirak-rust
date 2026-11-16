@@ -96,6 +96,11 @@ pub struct Description2 {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Configuration {
+    #[serde(default)]
+    pub operator: String,
+    #[serde(default)]
+    pub negate: bool,
+    #[serde(default)]
     pub nodes: Vec<Node>,
 }
 
@@ -104,7 +109,10 @@ pub struct Configuration {
 pub struct Node {
     pub operator: String,
     pub negate: bool,
+    #[serde(default)]
     pub cpe_match: Vec<CpeMatch>,
+    #[serde(default)]
+    pub children: Vec<Node>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -112,6 +120,9 @@ pub struct Node {
 pub struct CpeMatch {
     pub vulnerable: bool,
     pub criteria: String,
+    pub version_start_including: Option<String>,
+    pub version_start_excluding: Option<String>,
+    pub version_end_including: Option<String>,
     pub version_end_excluding: Option<String>,
     pub match_criteria_id: String,
 }

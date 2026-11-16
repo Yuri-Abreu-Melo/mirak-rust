@@ -119,6 +119,21 @@ Pre-compiled binaries are available through the project's GitHub Releases page:
 
 ## Usage
 
+### NVD matching behavior
+
+MIRAK queries the NVD CVE API with `cpeName` for each generated CPE, requests
+results in pages of up to 2,000 entries, and retries rate-limit or temporary
+service responses up to three times, with a 700 ms interval between requests.
+It evaluates CPE version bounds and the
+NVD configuration tree (`AND`, `OR`, nested nodes, and negation) against the
+host CPE inventory. Rejected CVE records are excluded. Version strings that
+the version comparator cannot interpret do not match a bounded range.
+
+This evaluation is limited to the CPEs MIRAK extracts from the host; it does not
+inspect arbitrary runtime relationships or configuration state. Requests are
+online and are not persistently cached; offline analysis is not currently
+supported.
+
 ### Testing Environment Setup
 
 MIRAK provides comprehensive testing through a virtualized environment using Vagrant. This approach enables reproducible security auditing across multiple Linux distributions.

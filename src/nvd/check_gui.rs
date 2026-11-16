@@ -8,7 +8,7 @@ use std::collections::HashMap;
 #[cfg(feature = "gui")]
 use crate::nvd;
 #[cfg(feature = "gui")]
-use crate::nvd::check::{CVEDataReport, should_report_vulnerability_for_node};
+use crate::nvd::check::{CVEDataReport, should_report_vulnerability};
 
 #[cfg(feature = "gui")]
 use tokio::sync::mpsc;
@@ -20,23 +20,6 @@ fn looks_like_nvd_api_key(input: &str) -> bool {
     )
     .unwrap();
     re.is_match(input.trim())
-}
-
-#[cfg(feature = "gui")]
-fn matches_cpe(cpe_pattern: &str, cpe_to_check: &str) -> bool {
-    let pattern_parts: Vec<&str> = cpe_pattern.split(':').collect();
-    let check_parts: Vec<&str> = cpe_to_check.split(':').collect();
-
-    if pattern_parts.len() != check_parts.len() {
-        return false;
-    }
-
-    for (p, c) in pattern_parts.iter().zip(check_parts.iter()) {
-        if *p != "*" && *c != "*" && *p != *c {
-            return false;
-        }
-    }
-    true
 }
 
 #[cfg(feature = "gui")]
@@ -61,14 +44,22 @@ pub async fn check_vulnerabilities_gui(
 
     for (index, cpe) in cpes.iter().enumerate() {
         let (vuln_map, issue_source, issues_qtd) =
-            check_vulnerabilities_for_cpe_gui(os_cpe.as_str(), cpe.as_str(), key, sender.clone())
-                .await;
+            check_vulnerabilities_for_cpe_gui(
+                os_cpe.as_str(),
+                cpe.as_str(),
+                key,
+                &cpes,
+                sender.clone(),
+            )
+            .await;
 
         for (cve_id, cve_data_list) in vuln_map {
-            all_vulnerabilities
-                .entry(cve_id)
-                .or_default()
-                .extend(cve_data_list);
+            let existing_reports = all_vulnerabilities.entry(cve_id).or_default();
+            for cve_data in cve_data_list {
+                if !existing_reports.contains(&cve_data) {
+                    existing_reports.push(cve_data);
+                }
+            }
         }
 
         sender
@@ -201,6 +192,7 @@ async fn check_vulnerabilities_for_cpe_gui(
     _os_cpe: &str,
     cpe: &str,
     key: &str,
+    inventory: &[String],
     sender: mpsc::UnboundedSender<String>,
 ) -> (HashMap<String, Vec<CVEDataReport>>, String, i64) {
     sender
@@ -236,54 +228,51 @@ async fn check_vulnerabilities_for_cpe_gui(
             .ok();
 
         for cves in result.vulnerabilities.iter() {
+            if cves.cve.vuln_status.eq_ignore_ascii_case("rejected") {
+                continue;
+            }
             let mut cve_found = false;
 
             for config in &cves.cve.configurations {
-                for node in &config.nodes {
-                    if should_report_vulnerability_for_node(node.operator.as_str(), cpe, node) {
-                        let base_score = cves
+                if should_report_vulnerability(cpe, inventory, config) {
+                    let base_score = cves
+                        .cve
+                        .metrics
+                        .cvss_metric_v31
+                        .first()
+                        .map(|m| m.cvss_data.base_score)
+                        .unwrap_or(0.0);
+
+                    let base_severity = cves
+                        .cve
+                        .metrics
+                        .cvss_metric_v31
+                        .first()
+                        .map(|m| m.cvss_data.base_severity.clone())
+                        .unwrap_or_else(|| "UNKNOWN".to_string());
+
+                    let cve_data = CVEDataReport {
+                        product: product_name.clone(),
+                        vendor: vendor.clone(),
+                        version: version.clone(),
+                        base_score,
+                        base_severity,
+                        cve_id: cves.cve.id.clone(),
+                        description: cves
                             .cve
-                            .metrics
-                            .cvss_metric_v31
+                            .descriptions
                             .first()
-                            .map(|m| m.cvss_data.base_score)
-                            .unwrap_or(0.0);
+                            .map(|d| d.value.clone())
+                            .unwrap_or_default(),
+                    };
 
-                        let base_severity = cves
-                            .cve
-                            .metrics
-                            .cvss_metric_v31
-                            .first()
-                            .map(|m| m.cvss_data.base_severity.clone())
-                            .unwrap_or_else(|| "UNKNOWN".to_string());
+                    vulnerabilities
+                        .entry(cves.cve.id.clone())
+                        .or_default()
+                        .push(cve_data);
 
-                        let cve_data = CVEDataReport {
-                            product: product_name.clone(),
-                            vendor: vendor.clone(),
-                            version: version.clone(),
-                            base_score,
-                            base_severity,
-                            cve_id: cves.cve.id.clone(),
-                            description: cves
-                                .cve
-                                .descriptions
-                                .first()
-                                .map(|d| d.value.clone())
-                                .unwrap_or_default(),
-                        };
-
-                        vulnerabilities
-                            .entry(cves.cve.id.clone())
-                            .or_default()
-                            .push(cve_data);
-
-                        cve_found = true;
-                        break;
-                    }
-
-                    if cve_found {
-                        break;
-                    }
+                    cve_found = true;
+                    break;
                 }
                 if cve_found {
                     break;
