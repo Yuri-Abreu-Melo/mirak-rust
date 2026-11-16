@@ -138,10 +138,11 @@ For Rust dependencies, MIRAK reads a matching validator `Cargo.lock` or
 for Routinator's dependency inventory. If neither source can be read, the scan
 prints a warning rather than claiming that dependencies are safe.
 
-NVD is an optional supplementary source. Provide `--key` or `--key-file` to
-cross-check the validators and their identified dependencies; no NVD key is
-required for official advisories or OSV. NVD requests are online and are not
-persistently cached; offline analysis is not currently supported.
+NVD is an optional supplementary source. Provide `--key-file` to cross-check
+the validators; the API key is read from the specified file and is never
+accepted as a command-line value. No NVD key is required for official
+advisories or OSV. NVD requests are online and are not persistently cached;
+offline analysis is not currently supported.
 
 The CSV report includes the source, affected product and version, match status,
 advisory URL, and evidence. CVEs are not treated as confirmed exploitable

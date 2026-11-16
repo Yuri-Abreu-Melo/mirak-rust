@@ -22,10 +22,6 @@ mod gui;
 vulnerabilities, and optionally cross-checks NVD."
 )]
 struct Cli {
-    /// Optional NVD API key for supplementary cross-checks
-    #[arg(short, long, value_name = "API_KEY")]
-    key: Option<String>,
-
     /// Optional file containing the NVD API key
     #[arg(short = 'f', long, value_name = "FILE_PATH")]
     key_file: Option<PathBuf>,
@@ -46,7 +42,7 @@ fn parse_args(cli: &Cli) -> Result<Option<String>, String> {
         })?;
         return Ok(Some(content.trim().to_string()));
     }
-    Ok(cli.key.clone())
+    Ok(None)
 }
 
 async fn validate(cli: &Cli) -> Result<(), String> {
@@ -130,5 +126,17 @@ async fn main() {
     if let Err(error) = validate(&cli).await {
         eprintln!("{} {}", "[ERROR]".bright_red().bold(), error);
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn nvd_api_key_is_only_accepted_from_a_file() {
+        assert!(Cli::try_parse_from(["mirak", "--key", "not-a-real-key"]).is_err());
+        assert!(Cli::try_parse_from(["mirak", "--key-file", "nvd-key.txt"]).is_ok());
     }
 }
