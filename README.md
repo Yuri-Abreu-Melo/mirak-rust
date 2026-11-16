@@ -138,11 +138,22 @@ For Rust dependencies, MIRAK reads a matching validator `Cargo.lock` or
 for Routinator's dependency inventory. If neither source can be read, the scan
 prints a warning rather than claiming that dependencies are safe.
 
+On Linux, host package inventories are system-wide, and Routinator Cargo
+installations are also checked in Cargo homes listed for local accounts. MIRAK
+also inspects locally available Docker and Podman images and associates running
+containers with their image. It does not start containers or execute validator
+binaries. For container images, version matching uses the OCI version label or
+a semantic-version image tag; images without either are skipped with a warning.
+Dependency SBOMs are not extracted from container images.
+
 NVD is an optional supplementary source. Provide `--key-file` to cross-check
 the validators; the API key is read from the specified file and is never
 accepted as a command-line value. No NVD key is required for official
 advisories or OSV. NVD requests are online and are not persistently cached;
 offline analysis is not currently supported.
+On Linux, the key file must be readable by its owner and grant no permissions
+to the group or other users; MIRAK refuses to continue if these permissions
+are unsafe or cannot be checked.
 
 The CSV report includes the source, affected product and version, match status,
 advisory URL, and evidence. CVEs are not treated as confirmed exploitable

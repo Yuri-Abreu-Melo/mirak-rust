@@ -39,6 +39,7 @@ mod tests {
             version: "1.6.6-1".to_string(),
             distributor: "NICMx".to_string(),
             source_name: "fort_validator".to_string(),
+            binary_path: None,
         };
 
         assert_eq!(
@@ -58,6 +59,7 @@ mod tests {
                 version: "1.6.6".to_string(),
                 distributor: "unknown".to_string(),
                 source_name: String::new(),
+                binary_path: None,
             };
 
             assert!(get_validator_cpes(&package).is_some(), "{name}");
@@ -71,6 +73,7 @@ mod tests {
             version: "0.15.2".to_string(),
             distributor: "nlnetlabs".to_string(),
             source_name: "routinator".to_string(),
+            binary_path: None,
         };
 
         assert_eq!(

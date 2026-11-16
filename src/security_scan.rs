@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     env, fs,
     path::{Path, PathBuf},
+    process::Command,
     time::Duration,
 };
 
@@ -12,7 +13,10 @@ use version_compare::{Cmp, compare};
 
 use crate::{
     cpe::{
-        apps::{PackageInfo, PackageManager, find_installed_apps, normalize_version},
+        apps::{
+            PackageInfo, PackageManager, find_installed_apps, find_routinator_by_cargo,
+            normalize_version,
+        },
         builder::validator_cpes,
     },
     nvd,
@@ -49,6 +53,8 @@ struct ValidatorInstall {
     version: String,
     binary: Option<PathBuf>,
     package: PackageInfo,
+    deployment: String,
+    version_source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,12 +111,15 @@ pub async fn scan(nvd_key: Option<&str>) -> Result<ScanResult, String> {
         .build()
         .map_err(|error| format!("Could not create HTTP client: {error}"))?;
 
-    let installs = find_validator_installs()?;
+    let (installs, discovery_warnings) = find_validator_installs()?;
     if installs.is_empty() {
         return Err("No Routinator or Fort installation was detected.".to_string());
     }
 
-    let mut result = ScanResult::default();
+    let mut result = ScanResult {
+        warnings: discovery_warnings,
+        ..ScanResult::default()
+    };
     let mut findings = Vec::new();
 
     println!("[INFO] Fetching official Routinator and Fort advisories...");
@@ -153,7 +162,14 @@ pub async fn scan(nvd_key: Option<&str>) -> Result<ScanResult, String> {
                 severity: "UNKNOWN".to_string(),
                 status: "Affected-version match; exploitability not confirmed.".to_string(),
                 advisory_url: advisory.url.clone(),
-                evidence: format!("{}{}{}", advisory.summary, remediation, condition),
+                evidence: format!(
+                    "{}{}{} Detected at {} (version source: {}).",
+                    advisory.summary,
+                    remediation,
+                    condition,
+                    install.deployment,
+                    install.version_source
+                ),
                 description: advisory.description.clone(),
             });
         }
@@ -205,6 +221,25 @@ pub async fn scan(nvd_key: Option<&str>) -> Result<ScanResult, String> {
                 match nvd::check::check(cpes, key.to_string()).await {
                     Ok(nvd_findings) => {
                         findings.extend(nvd_findings.into_values().flatten().map(|finding| {
+                            let deployments = installs
+                                .iter()
+                                .filter(|install| {
+                                    products_match(&install.product, &finding.product)
+                                        && install.version == finding.version
+                                })
+                                .map(|install| {
+                                    format!(
+                                        "{} (version source: {})",
+                                        install.deployment, install.version_source
+                                    )
+                                })
+                                .collect::<Vec<_>>()
+                                .join("; ");
+                            let evidence = if deployments.is_empty() {
+                                finding.vendor
+                            } else {
+                                format!("{} Detected at {deployments}.", finding.vendor)
+                            };
                             SecurityFinding {
                                 id: finding.cve_id,
                                 source: "NVD".to_string(),
@@ -216,7 +251,7 @@ pub async fn scan(nvd_key: Option<&str>) -> Result<ScanResult, String> {
                                     "NVD configuration/version match; exploitability not confirmed."
                                         .to_string(),
                                 advisory_url: String::new(),
-                                evidence: finding.vendor,
+                                evidence,
                                 description: finding.description,
                             }
                         }));
@@ -237,13 +272,26 @@ pub async fn scan(nvd_key: Option<&str>) -> Result<ScanResult, String> {
     Ok(result)
 }
 
-fn find_validator_installs() -> Result<Vec<ValidatorInstall>, String> {
-    let package_manager = PackageManager::detect_package_manager().ok_or_else(|| {
-        "No supported package manager (APT, DNF, or APK) was detected.".to_string()
-    })?;
-    let packages = find_installed_apps(package_manager)
-        .ok_or_else(|| "Could not read the installed package inventory.".to_string())?;
-
+fn find_validator_installs() -> Result<(Vec<ValidatorInstall>, Vec<String>), String> {
+    let mut warnings = Vec::new();
+    let mut packages = match PackageManager::detect_package_manager() {
+        Some(package_manager) => match find_installed_apps(package_manager) {
+            Some(packages) => packages,
+            None => {
+                warnings.push("Could not read the host package inventory.".to_string());
+                Vec::new()
+            }
+        },
+        None => {
+            warnings.push(
+                "No supported host package manager (APT, DNF, or APK) was detected.".to_string(),
+            );
+            Vec::new()
+        }
+    };
+    let (cargo_packages, cargo_warnings) = find_routinator_by_cargo();
+    packages.extend(cargo_packages);
+    warnings.extend(cargo_warnings);
     let mut installs = Vec::new();
     let mut seen = HashSet::new();
     for package in packages {
@@ -263,32 +311,367 @@ fn find_validator_installs() -> Result<Vec<ValidatorInstall>, String> {
         };
 
         let version = normalize_version(&package.version);
-        if !seen.insert((product.to_string(), version.clone())) {
-            continue;
-        }
         let executable_names = if product == "routinator" {
             &["routinator"][..]
         } else {
             &["fort", "fort-validator"][..]
         };
+        let binary = package
+            .binary_path
+            .clone()
+            .or_else(|| find_executable(executable_names));
+        let install_path = binary
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "host package inventory".to_string());
+        if !seen.insert((product.to_string(), version.clone(), install_path)) {
+            continue;
+        }
+        let deployment = binary
+            .as_ref()
+            .map(|path| format!("host binary {}", path.display()))
+            .unwrap_or_else(|| "host package inventory".to_string());
         installs.push(ValidatorInstall {
             product: product.to_string(),
             version,
-            binary: find_executable(executable_names),
+            binary,
             package,
+            deployment,
+            version_source: "host package inventory".to_string(),
         });
     }
 
-    Ok(installs)
+    let (container_installs, container_warnings) = find_container_installs();
+    installs.extend(container_installs);
+    warnings.extend(container_warnings);
+
+    if installs.is_empty() {
+        let details = if warnings.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", warnings.join(" "))
+        };
+        return Err(format!(
+            "No Routinator or Fort installation was detected.{details}"
+        ));
+    }
+    Ok((installs, warnings))
+}
+
+fn products_match(left: &str, right: &str) -> bool {
+    let normalize = |product: &str| {
+        let normalized = product
+            .to_ascii_lowercase()
+            .replace('-', "")
+            .replace('_', "");
+        if normalized.contains("routinator") {
+            "routinator"
+        } else if normalized.contains("fort") {
+            "fort"
+        } else {
+            ""
+        }
+    };
+    normalize(left) == normalize(right) && !normalize(left).is_empty()
 }
 
 fn find_executable(names: &[&str]) -> Option<PathBuf> {
-    env::split_paths(&env::var_os("PATH")?).find_map(|directory| {
+    let mut directories = vec![
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/usr/local/sbin"),
+        PathBuf::from("/bin"),
+        PathBuf::from("/usr/sbin"),
+        PathBuf::from("/sbin"),
+        PathBuf::from("/opt/routinator/bin"),
+    ];
+    if let Ok(entries) = fs::read_dir("/opt") {
+        directories.extend(entries.flatten().filter_map(|entry| {
+            entry
+                .file_type()
+                .ok()
+                .filter(|file_type| file_type.is_dir())
+                .map(|_| entry.path().join("bin"))
+        }));
+    }
+    if let Some(path) = env::var_os("PATH") {
+        directories.extend(env::split_paths(&path));
+    }
+    if let Some(cargo_home) = env::var_os("CARGO_HOME") {
+        directories.push(PathBuf::from(cargo_home).join("bin"));
+    }
+    if let Ok(passwd) = fs::read_to_string("/etc/passwd") {
+        directories.extend(passwd.lines().filter_map(|line| {
+            let home = line.split(':').nth(5)?;
+            (!home.is_empty() && home != "/nonexistent")
+                .then(|| PathBuf::from(home).join(".cargo/bin"))
+        }));
+    }
+
+    directories.dedup();
+    directories.into_iter().find_map(|directory| {
         names
             .iter()
             .map(|name| directory.join(name))
             .find(|path| path.is_file())
     })
+}
+
+fn find_container_installs() -> (Vec<ValidatorInstall>, Vec<String>) {
+    let mut installs = Vec::new();
+    let mut warnings = Vec::new();
+
+    for engine in ["docker", "podman"] {
+        let image_list = match Command::new(engine)
+            .args(["image", "ls", "--no-trunc", "--quiet"])
+            .output()
+        {
+            Ok(output) if output.status.success() => output,
+            Ok(output) => {
+                warnings.push(format!(
+                    "Could not list local {engine} images: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                ));
+                continue;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                warnings.push(format!("Could not query {engine} images: {error}"));
+                continue;
+            }
+        };
+
+        let (running_containers, running_warning) = running_container_names(engine);
+        if let Some(warning) = running_warning {
+            warnings.push(warning);
+        }
+        let image_list_text = String::from_utf8_lossy(&image_list.stdout);
+        let image_ids = image_list_text
+            .lines()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .collect::<HashSet<_>>();
+        for image_id in image_ids {
+            let inspect = match Command::new(engine)
+                .args(["image", "inspect", image_id])
+                .output()
+            {
+                Ok(output) if output.status.success() => output,
+                Ok(output) => {
+                    warnings.push(format!(
+                        "Could not inspect {engine} image {image_id}: {}",
+                        String::from_utf8_lossy(&output.stderr).trim()
+                    ));
+                    continue;
+                }
+                Err(error) => {
+                    warnings.push(format!("Could not inspect {engine} image {image_id}: {error}"));
+                    continue;
+                }
+            };
+            let Ok(value) = serde_json::from_slice::<Value>(&inspect.stdout) else {
+                warnings.push(format!(
+                    "Could not parse metadata for {engine} image {image_id}."
+                ));
+                continue;
+            };
+            let image = value
+                .as_array()
+                .and_then(|images| images.first())
+                .unwrap_or(&value);
+            match validator_install_from_image(engine, image, &running_containers) {
+                Ok(Some(install)) => installs.push(install),
+                Ok(None) => {}
+                Err(warning) => warnings.push(warning),
+            }
+        }
+    }
+
+    (installs, warnings)
+}
+
+fn running_container_names(engine: &str) -> (HashMap<String, Vec<String>>, Option<String>) {
+    let output = match Command::new(engine)
+        .args(["ps", "--format", "{{.Image}}|{{.Names}}"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            return (
+                HashMap::new(),
+                Some(format!(
+                    "Could not list running {engine} containers: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                )),
+            );
+        }
+        Err(error) => {
+            return (
+                HashMap::new(),
+                Some(format!("Could not list running {engine} containers: {error}")),
+            );
+        }
+    };
+
+    let output_text = String::from_utf8_lossy(&output.stdout);
+    let mut containers = HashMap::<String, Vec<String>>::new();
+    for line in output_text.lines() {
+        let Some((image, name)) = line.split_once('|') else {
+            continue;
+        };
+        containers
+            .entry(image.to_string())
+            .or_default()
+            .push(name.to_string());
+    }
+    (containers, None)
+}
+
+fn validator_install_from_image(
+    engine: &str,
+    image: &Value,
+    running_containers: &HashMap<String, Vec<String>>,
+) -> Result<Option<ValidatorInstall>, String> {
+    let Some(config) = image.get("Config") else {
+        return Ok(None);
+    };
+    let labels = config.get("Labels").and_then(Value::as_object);
+    let references = image
+        .get("RepoTags")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter(|reference| !reference.ends_with(":<none>"))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let command = ["Entrypoint", "Cmd"]
+        .into_iter()
+        .filter_map(|field| config.get(field).and_then(Value::as_array))
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let label_text = [
+        "org.opencontainers.image.title",
+        "org.opencontainers.image.ref.name",
+        "org.label-schema.name",
+        "name",
+    ]
+    .into_iter()
+    .filter_map(|key| labels.and_then(|labels| labels.get(key)))
+    .filter_map(Value::as_str)
+    .collect::<Vec<_>>()
+    .join(" ");
+    let identity = format!("{} {command} {label_text}", references.join(" "));
+    let normalized = identity.to_ascii_lowercase();
+    let command_names = command
+        .split_whitespace()
+        .filter_map(|argument| Path::new(argument).file_name())
+        .filter_map(|name| name.to_str())
+        .map(str::to_ascii_lowercase)
+        .collect::<Vec<_>>();
+    let product = if contains_product_token(&normalized, "routinator")
+        || command_names
+            .iter()
+            .any(|name| name.as_str() == "routinator")
+    {
+        "routinator"
+    } else if contains_product_token(&normalized, "fort")
+        || contains_product_token(&normalized, "fortvalidator")
+        || command_names
+            .iter()
+            .any(|name| matches!(name.as_str(), "fort" | "fort-validator"))
+    {
+        "fort"
+    } else {
+        return Ok(None);
+    };
+
+    let labeled_version = labels
+        .and_then(|labels| labels.get("org.opencontainers.image.version"))
+        .and_then(Value::as_str)
+        .and_then(parse_image_version);
+    let version_source = if labeled_version.is_some() {
+        "OCI image version label"
+    } else {
+        "image tag"
+    };
+    let tagged_version = references.iter().find_map(|reference| {
+        reference
+            .rsplit_once(':')
+            .and_then(|(_, tag)| parse_image_version(tag))
+    });
+    let version = labeled_version.or(tagged_version).ok_or_else(|| {
+        format!(
+            "Could not determine the version of {engine} image {} from its OCI label or tag.",
+            references.join(", ")
+        )
+    })?;
+    let image_id = image
+        .get("Id")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown image id");
+    let reference_text = if references.is_empty() {
+        image_id.to_string()
+    } else {
+        references.join(", ")
+    };
+    let running_names = running_containers
+        .get(image_id)
+        .into_iter()
+        .flatten()
+        .chain(
+            references
+                .iter()
+                .filter_map(|reference| running_containers.get(reference))
+                .flatten(),
+        )
+        .cloned()
+        .collect::<Vec<_>>();
+    let deployment = if running_names.is_empty() {
+        format!("{engine} image {reference_text}")
+    } else {
+        format!(
+            "{engine} image {reference_text} (running containers: {})",
+            running_names.join(", ")
+        )
+    };
+    let (name, distributor) = if product == "routinator" {
+        ("routinator", "nlnetlabs")
+    } else {
+        ("fort-validator", "nicmx")
+    };
+    let package = PackageInfo {
+        name: name.to_string(),
+        version: version.clone(),
+        distributor: distributor.to_string(),
+        source_name: name.to_string(),
+        binary_path: None,
+    };
+
+    Ok(Some(ValidatorInstall {
+        product: product.to_string(),
+        version,
+        binary: None,
+        package,
+        deployment,
+        version_source: version_source.to_string(),
+    }))
+}
+
+fn contains_product_token(identity: &str, product: &str) -> bool {
+    identity
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .any(|token| token == product)
+}
+
+fn parse_image_version(value: &str) -> Option<String> {
+    let regex = Regex::new(r"(?i)^v?(\d+\.\d+(?:\.\d+)?(?:[-+][0-9a-z.-]+)?)$").ok()?;
+    regex
+        .captures(value.trim())
+        .and_then(|captures| captures.get(1))
+        .map(|version| version.as_str().to_string())
 }
 
 fn find_lockfile(binary: &Path, product: &str, version: &str) -> Option<PathBuf> {

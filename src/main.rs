@@ -34,6 +34,9 @@ struct Cli {
 
 fn parse_args(cli: &Cli) -> Result<Option<String>, String> {
     if let Some(key_path) = &cli.key_file {
+        #[cfg(target_os = "linux")]
+        validate_key_file_permissions(key_path)?;
+
         let content = fs::read_to_string(key_path).map_err(|error| {
             format!(
                 "Could not read NVD key file '{}': {error}",
@@ -43,6 +46,27 @@ fn parse_args(cli: &Cli) -> Result<Option<String>, String> {
         return Ok(Some(content.trim().to_string()));
     }
     Ok(None)
+}
+
+#[cfg(target_os = "linux")]
+fn validate_key_file_permissions(path: &PathBuf) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = fs::metadata(path).map_err(|error| {
+        format!(
+            "Could not verify permissions for NVD key file '{}': {error}",
+            path.display()
+        )
+    })?;
+    let mode = metadata.permissions().mode() & 0o777;
+    if mode & 0o400 == 0 || mode & 0o077 != 0 {
+        return Err(format!(
+            "NVD key file '{}' has permissions {:04o}; it must be readable by the owner only (for example, chmod 600).",
+            path.display(),
+            mode
+        ));
+    }
+    Ok(())
 }
 
 async fn validate(cli: &Cli) -> Result<(), String> {

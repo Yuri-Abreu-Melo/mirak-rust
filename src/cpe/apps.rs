@@ -1,6 +1,6 @@
 use colored::*;
 use regex::Regex;
-use std::process::Command;
+use std::{env, fs, path::PathBuf, process::Command};
 
 #[derive(Debug, Clone, Copy)]
 pub enum PackageManager {
@@ -16,6 +16,7 @@ pub struct PackageInfo {
     pub version: String,
     pub distributor: String,
     pub source_name: String,   // NEW: upstream source package name
+    pub binary_path: Option<PathBuf>,
 }
 
 /// Clean some undesired characters
@@ -24,25 +25,69 @@ fn clean_cpe_carachters(text: &str) -> String {
     regex.replace_all(text, "").to_string()
 }
 
-fn find_routinator_by_cargo(packages: &mut Vec<PackageInfo>) {
-    if let Ok(output) = Command::new("cargo").args(["install", "--list"]).output()
-        && output.status.success()
-    {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Some(line) = stdout.lines().find(|l| l.starts_with("routinator v")) {
-            if let Some((name, version)) = line.split_once(' ') {
-                packages.push(PackageInfo {
-                    name: name.to_string(),
-                    version: version
-                        .trim_start_matches('v')
-                        .trim_end_matches(':')
-                        .to_string(),
-                    distributor: "nlnetlabs".to_string(),
-                    source_name: "routinator".to_string(), // hardcoded for this tool
+pub fn find_routinator_by_cargo() -> (Vec<PackageInfo>, Vec<String>) {
+    let mut packages = Vec::new();
+    let mut warnings = Vec::new();
+    let mut cargo_homes = Vec::new();
+    if let Some(cargo_home) = env::var_os("CARGO_HOME") {
+        cargo_homes.push(PathBuf::from(cargo_home));
+    }
+    if let Some(home) = env::var_os("HOME") {
+        cargo_homes.push(PathBuf::from(home).join(".cargo"));
+    }
+    if let Ok(passwd) = fs::read_to_string("/etc/passwd") {
+        cargo_homes.extend(passwd.lines().filter_map(|line| {
+            let home = line.split(':').nth(5)?;
+            (!home.is_empty() && home != "/nonexistent")
+                .then(|| PathBuf::from(home).join(".cargo"))
+        }));
+    }
+
+    let mut seen = Vec::new();
+    for cargo_home in cargo_homes {
+        if seen.contains(&cargo_home) || !cargo_home.join("bin/routinator").is_file() {
+            continue;
+        }
+        seen.push(cargo_home.clone());
+
+        match Command::new("cargo")
+            .env("CARGO_HOME", &cargo_home)
+            .args(["install", "--list"])
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let version = stdout.lines().find_map(|line| {
+                    line.strip_prefix("routinator v")
+                        .and_then(|value| value.split_once(':').map(|(version, _)| version))
                 });
+                if let Some(version) = version {
+                    packages.push(PackageInfo {
+                        name: "routinator".to_string(),
+                        version: version.to_string(),
+                        distributor: "nlnetlabs".to_string(),
+                        source_name: "routinator".to_string(),
+                        binary_path: Some(cargo_home.join("bin/routinator")),
+                    });
+                } else {
+                    warnings.push(format!(
+                        "Could not determine the Cargo-installed Routinator version in {}.",
+                        cargo_home.display()
+                    ));
+                }
             }
+            Ok(output) => warnings.push(format!(
+                "Could not query the Cargo installation in {}: {}",
+                cargo_home.display(),
+                String::from_utf8_lossy(&output.stderr).trim()
+            )),
+            Err(error) => warnings.push(format!(
+                "Could not query the Cargo installation in {}: {error}",
+                cargo_home.display()
+            )),
         }
     }
+    (packages, warnings)
 }
 
 pub fn find_installed_apps(pkg_manager: PackageManager) -> Option<Vec<PackageInfo>> {
@@ -109,6 +154,7 @@ pub fn find_installed_apps(pkg_manager: PackageManager) -> Option<Vec<PackageInf
                         version,
                         distributor: "nlnetlabs".to_string(),
                         source_name: "routinator".to_string(),
+                        binary_path: None,
                     })
                 } else {
                     Some(PackageInfo {
@@ -120,6 +166,7 @@ pub fn find_installed_apps(pkg_manager: PackageManager) -> Option<Vec<PackageInf
                             .unwrap_or("*")
                             .to_string(),
                         source_name,
+                        binary_path: None,
                     })
                 }
             }
@@ -142,6 +189,7 @@ pub fn find_installed_apps(pkg_manager: PackageManager) -> Option<Vec<PackageInf
                         version: pkg_version,
                         distributor: "nlnetlabs".to_string(),
                         source_name: "routinator".to_string(),
+                        binary_path: None,
                     })
                 } else {
                     Some(PackageInfo {
@@ -149,13 +197,13 @@ pub fn find_installed_apps(pkg_manager: PackageManager) -> Option<Vec<PackageInf
                         version: pkg_version,
                         distributor: "alpine".to_string(),
                         source_name: pkg_name,
+                        binary_path: None,
                     })
                 }
             }
         })
         .collect();
 
-    find_routinator_by_cargo(&mut packages);
     Some(packages)
 }
 
