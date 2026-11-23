@@ -85,50 +85,72 @@ async fn validate(cli: &Cli) -> Result<(), String> {
     // Inspect ports there are listening
     // let ports_result = extractors::network::list_open_ports();
 
-    // Validating routinator config and file permissions
+    // This pre-check is Routinator-specific; the CVE scan below also handles Fort.
     println!(
         "\n{}",
-        "[INFO] Validating Routinator configuration..."
+        "[INFO] Running Routinator configuration and permission pre-check..."
             .bright_blue()
             .bold()
     );
     println!(
         "{}",
-        "[INFO] Checking Routinator data validation process".bright_cyan()
+        "[INFO] Checking Routinator config files; this is not a CVE validation."
+            .bright_cyan()
     );
 
     routinator::validator::validate();
     println!(
         "{}",
-        "[ OK ] Routinator data validation completed successfully\n".bright_green()
+        "[INFO] Routinator pre-check finished; review its messages above. CVE triage covers both Routinator and Fort.\n"
+            .bright_blue()
     );
 
-    // Scan only the supported RPKI validators and their identifiable dependencies.
     println!(
         "{}",
-        "[INFO] Scanning Routinator, Fort, and their dependencies...\n"
+        "[INFO] Running CVE triage for Routinator, Fort, and identifiable dependencies...\n"
             .bright_blue()
             .bold()
     );
 
     let scan_result = security_scan::scan(nvd_key.as_deref()).await?;
+    let warning_count = scan_result.warnings.len();
     for warning in &scan_result.warnings {
         eprintln!("{} {}", "[WARN]".bright_yellow().bold(), warning);
     }
 
     println!(
         "\n{}",
-        "[INFO] Processing vulnerability report..."
+        format!(
+            "[SUMMARY] {} possible match(es) for supported validators/dependencies.",
+            scan_result.findings.len()
+        )
             .bright_blue()
             .bold()
     );
+    if scan_result.findings.is_empty() {
+        println!(
+            "No possible matches were found in the sources checked; this does not prove that the system is vulnerability-free."
+        );
+    } else {
+        for finding in &scan_result.findings {
+            println!(
+                "[MATCH] {} | {} {} | {} | {}",
+                finding.id, finding.product, finding.version, finding.severity, finding.source
+            );
+        }
+    }
 
-    report::make_report(&scan_result.findings)?;
-
-    println!(
-        "\n{}",
-        "[ OK ] Scan completed successfully!".bright_green().bold()
-    );
+    match report::make_report(&scan_result.findings)? {
+        Some(path) => println!("[INFO] CSV report written to {}.", path.display()),
+        None => println!("[INFO] No CSV report was generated because there were no matches."),
+    }
+    if warning_count == 0 {
+        println!("[INFO] Triage finished. Matches are not confirmation of exploitability.");
+    } else {
+        println!(
+            "[INFO] Triage finished with {warning_count} warning(s); review them before interpreting coverage."
+        );
+    }
     Ok(())
 }
 

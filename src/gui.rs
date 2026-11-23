@@ -27,7 +27,7 @@ pub fn build_ui(app: &Application) {
 
     let api_text = Label::builder().build();
     api_text.set_markup(
-        "[INFO] NVD API key is optional (official advisories and OSV are queried online)",
+        "NVD API key is optional; official advisories and OSV are queried online",
     );
 
     let bytes = gtk::glib::Bytes::from(IMAGE_DATA);
@@ -76,7 +76,7 @@ pub fn build_ui(app: &Application) {
         .build();
 
     let init_btn = Button::builder()
-        .label("🚀 Start Scan")
+        .label("🚀 Start CVE Triage")
         .sensitive(true)
         .margin_bottom(5)
         .build();
@@ -112,7 +112,7 @@ pub fn build_ui(app: &Application) {
             }
 
             log_ui("═══════════════════════════════════════════\n");
-            log_ui("🚀 INITIALIZING MIRAK SECURITY SCAN\n");
+            log_ui("🚀 STARTING MIRAK CVE TRIAGE\n");
             log_ui("═══════════════════════════════════════════\n\n");
 
             std::thread::spawn(move || {
@@ -126,28 +126,58 @@ pub fn build_ui(app: &Application) {
                         let _ = tx.send(msg.to_string());
                     };
 
-                    log("[INFO] Initializing validation of Routinator data\n");
+                    log("[INFO] Running Routinator-only configuration/permission pre-check\n");
                     log(&routinator::validator::validate_gui());
-                    log("[ OK ] Routinator validation completed\n\n");
-                    log("[INFO] Scanning Routinator, Fort, and their dependencies\n\n");
+                    log("[INFO] Routinator pre-check finished; review its messages above. CVE triage also covers Fort.\n\n");
+                    log("[INFO] Checking official advisories, identifiable dependencies, and NVD when configured\n\n");
 
                     let key = (!nvd_key.trim().is_empty()).then_some(nvd_key.as_str());
                     match security_scan::scan(key).await {
                         Ok(scan_result) => {
-                            for warning in scan_result.warnings {
+                            let warning_count = scan_result.warnings.len();
+                            for warning in &scan_result.warnings {
                                 log(&format!("[WARN] {warning}\n"));
                             }
                             log(&format!(
-                                "[INFO] {} finding(s) matched\n",
+                                "\n[SUMMARY] {} possible match(es) for supported validators/dependencies\n",
                                 scan_result.findings.len()
                             ));
-                            log("\n[INFO] Processing vulnerability report\n");
-                            if let Err(error) = report::make_report(&scan_result.findings) {
-                                log(&format!("[ERROR] {error}\n"));
+                            if scan_result.findings.is_empty() {
+                                log("No possible matches were found in the sources checked; this does not prove that the system is vulnerability-free.\n");
                             } else {
-                                log("\n═══════════════════════════════════════════\n");
-                                log("[ OK ] VALIDATION FINISHED SUCCESSFULLY!\n");
-                                log("═══════════════════════════════════════════\n");
+                                for finding in &scan_result.findings {
+                                    log(&format!(
+                                        "[MATCH] {} | {} {} | {} | {}\n",
+                                        finding.id,
+                                        finding.product,
+                                        finding.version,
+                                        finding.severity,
+                                        finding.source
+                                    ));
+                                }
+                            }
+                            log("\n[INFO] Writing CSV report\n");
+                            let mut report_failed = false;
+                            match report::make_report(&scan_result.findings) {
+                                Ok(Some(path)) => {
+                                    log(&format!("[INFO] CSV report written to {}\n", path.display()));
+                                }
+                                Ok(None) => {
+                                    log("[INFO] No CSV report was generated because there were no matches.\n");
+                                }
+                                Err(error) => {
+                                    report_failed = true;
+                                    log(&format!("[ERROR] {error}\n"));
+                                }
+                            }
+                            if report_failed {
+                                log("[WARN] Triage finished, but the CSV report could not be written.\n");
+                            } else if warning_count > 0 {
+                                log(&format!(
+                                    "[INFO] Triage finished with {warning_count} warning(s); review them before interpreting coverage.\n"
+                                ));
+                            } else {
+                                log("[INFO] Triage finished. Matches are not confirmation of exploitability.\n");
                             }
                         }
                         Err(error) => log(&format!("[ERROR] {error}\n")),

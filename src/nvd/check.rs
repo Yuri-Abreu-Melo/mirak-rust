@@ -198,11 +198,11 @@ pub async fn check_vulnerabilities(
 
     println!(
         "{}",
-        "[INFO] Starting vulnerability scan...".bright_blue().bold()
+        "[INFO] Starting NVD CPE lookups...".bright_blue().bold()
     );
     println!(
         "{} {} {}",
-        "[INFO] Total CPEs to check:".bright_cyan(),
+        "[INFO] CPEs queued for NVD lookup:".bright_cyan(),
         total_cpes.to_string().bright_yellow().bold(),
         "\n".to_string()
     );
@@ -237,7 +237,8 @@ pub async fn check_vulnerabilities(
 
     println!(
         "\n{}",
-        "[ OK ] Scan completed successfully!".bright_green().bold()
+        "[INFO] NVD CPE lookups completed; applicable matches are summarized below."
+            .bright_blue()
     );
     Ok((all_vulnerabilities, issues))
 }
@@ -251,12 +252,16 @@ pub async fn check(
     let mut all_vulnerabilities: HashMap<String, Vec<CVEDataReport>> = HashMap::new();
     let mut final_issues: HashMap<String, i64> = HashMap::new();
 
-    println!("{}", "[INFO] Validating NVD API KEY...".bright_yellow().bold());
+    println!(
+        "{}",
+        "[INFO] Checking NVD API key format...".bright_yellow().bold()
+    );
 
     if looks_like_nvd_api_key(key.as_str()) && !cpes.is_empty() {
         println!(
             "{}",
-            "[ OK ] NVD API KEY validated successfully!".bright_green()
+            "[INFO] UUID format accepted; the NVD service will validate the key during the request."
+                .bright_blue()
         );
         println!("{}", "[INFO] Reading cpes.mirak...".bright_cyan());
         let os_cpe = cpes.first().cloned().unwrap_or_default();
@@ -284,7 +289,7 @@ pub async fn check(
         return Err("Invalid NVD API key or empty validator CPE inventory.".to_string());
     }
 
-    let total: i64 = final_issues.values().sum();
+    let total = all_vulnerabilities.len();
 
     println!(
         "\n{}",
@@ -301,7 +306,9 @@ pub async fn check(
 
     println!(
         "{} {}",
-        "[INFO] Total CVEs found:".bright_green().bold(),
+        "[INFO] Applicable CVE matches after version/configuration filtering:"
+            .bright_green()
+            .bold(),
         total.to_string().bright_yellow().bold()
     );
 
@@ -309,7 +316,7 @@ pub async fn check(
         println!(
             "{} {} {}",
             "[INFO]".bright_cyan(),
-            format!("{}:", source).bright_white(),
+            format!("{} candidate records before filtering:", source).bright_white(),
             qtd.to_string().bright_yellow()
         );
     }
@@ -354,9 +361,9 @@ async fn check_vulnerabilities_for_cpe(
         // Show only if vulnerabilities are found
         println!(
             "\n  {} {} {}",
-            "[INFO] Found".bright_red(),
+            "[INFO] NVD candidate records:".bright_cyan(),
             result.total_results.to_string().bright_yellow().bold(),
-            format!("vulnerabilities for {}", product_name).bright_white()
+            format!("for {}", product_name).bright_white()
         );
 
         for cves in result.vulnerabilities.iter() {
@@ -414,9 +421,9 @@ async fn check_vulnerabilities_for_cpe(
 
         println!(
             "  {} {} {}\n",
-            "[ OK ] Processed".bright_green(),
+            "[INFO] Applicable configuration/version matches:".bright_blue(),
             vulnerabilities.len().to_string().bright_yellow().bold(),
-            format!("CVEs for {}", product_name).bright_white()
+            format!("for {}", product_name).bright_white()
         );
     }
 

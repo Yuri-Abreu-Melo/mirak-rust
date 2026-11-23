@@ -23,7 +23,9 @@ pub fn validate_gui() -> String {
     } else {
         output.push_str(&format!(
             "{}\n",
-            "[ERROR] Routinator not installed".bright_red().bold()
+            "[WARN] Routinator not detected; its configuration checks were skipped. Fort CVE triage can continue."
+                .bright_yellow()
+                .bold()
         ));
     }
 
@@ -47,8 +49,8 @@ pub fn validate() {
     } else {
         println!(
             "{}",
-            "[ERROR] Routinator not installed. Please install it to continue."
-                .bright_red()
+            "[WARN] Routinator not detected; its configuration checks were skipped. Fort CVE triage can continue."
+                .bright_yellow()
                 .bold()
         );
     }
@@ -70,7 +72,7 @@ fn validate_config() -> String {
                 Ok(file) => match toml::from_str::<Config>(&file) {
                     Ok(_) => reports.push_str(
                         format!(
-                            "  [ OK ] Config file '{}' validated successfully\n",
+                            "  [ OK ] Config file '{}' parsed successfully\n",
                             path.display()
                         )
                         .bright_green()

@@ -1,17 +1,12 @@
-use colored::*;
 use csv::Writer;
 use std::env;
+use std::path::PathBuf;
 
 use crate::security_scan::SecurityFinding;
 
-pub fn make_report(findings: &[SecurityFinding]) -> Result<(), String> {
+pub fn make_report(findings: &[SecurityFinding]) -> Result<Option<PathBuf>, String> {
     if findings.is_empty() {
-        println!(
-            "{}",
-            "[INFO] - No Routinator, Fort, or dependency findings were found; no report will be generated."
-                .bright_green()
-        );
-        return Ok(());
+        return Ok(None);
     }
 
     let home =
@@ -54,10 +49,5 @@ pub fn make_report(findings: &[SecurityFinding]) -> Result<(), String> {
     writer
         .flush()
         .map_err(|error| format!("Could not write {}: {error}", report_path.display()))?;
-    println!(
-        "{} {}",
-        "[INFO] - Report generated at".bright_green(),
-        report_path.display().to_string().bright_white().bold()
-    );
-    Ok(())
+    Ok(Some(report_path))
 }
