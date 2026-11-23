@@ -26,9 +26,21 @@ struct Cli {
     #[arg(short = 'f', long, value_name = "FILE_PATH")]
     key_file: Option<PathBuf>,
 
+    /// Collect local validator and dependency inventory without online checks
+    #[arg(
+        long,
+        value_name = "FILE",
+        conflicts_with_all = ["validate_from", "key_file"]
+    )]
+    extract_only: Option<PathBuf>,
+
+    /// Validate an inventory snapshot created with --extract-only
+    #[arg(long, value_name = "FILE", conflicts_with = "extract_only")]
+    validate_from: Option<PathBuf>,
+
     #[cfg(feature = "gui")]
     /// Specify if it will run with the gui
-    #[arg(short, long)]
+    #[arg(short, long, conflicts_with_all = ["extract_only", "validate_from"])]
     gui: bool,
 }
 
@@ -70,6 +82,19 @@ fn validate_key_file_permissions(path: &PathBuf) -> Result<(), String> {
 }
 
 async fn validate(cli: &Cli) -> Result<(), String> {
+    if let Some(path) = &cli.extract_only {
+        let (installation_count, warnings) = security_scan::export_snapshot(path)?;
+        for warning in warnings {
+            eprintln!("{} {}", "[WARN]".bright_yellow().bold(), warning);
+        }
+        println!(
+            "[INFO] Extracted {installation_count} validator installation(s) to {}.",
+            path.display()
+        );
+        println!("[INFO] No advisory, OSV, or NVD queries were performed in extraction mode.");
+        return Ok(());
+    }
+
     let nvd_key = parse_args(cli)?;
 
     println!(
@@ -85,26 +110,6 @@ async fn validate(cli: &Cli) -> Result<(), String> {
     // Inspect ports there are listening
     // let ports_result = extractors::network::list_open_ports();
 
-    // This pre-check is Routinator-specific; the CVE scan below also handles Fort.
-    println!(
-        "\n{}",
-        "[INFO] Running Routinator configuration and permission pre-check..."
-            .bright_blue()
-            .bold()
-    );
-    println!(
-        "{}",
-        "[INFO] Checking Routinator config files; this is not a CVE validation."
-            .bright_cyan()
-    );
-
-    routinator::validator::validate();
-    println!(
-        "{}",
-        "[INFO] Routinator pre-check finished; review its messages above. CVE triage covers both Routinator and Fort.\n"
-            .bright_blue()
-    );
-
     println!(
         "{}",
         "[INFO] Running CVE triage for Routinator, Fort, and identifiable dependencies...\n"
@@ -112,7 +117,33 @@ async fn validate(cli: &Cli) -> Result<(), String> {
             .bold()
     );
 
-    let scan_result = security_scan::scan(nvd_key.as_deref()).await?;
+    let scan_result = if let Some(path) = &cli.validate_from {
+        println!(
+            "[INFO] Validating the extracted inventory from {}.",
+            path.display()
+        );
+        security_scan::scan_from_snapshot(path, nvd_key.as_deref()).await?
+    } else {
+        // This pre-check is Routinator-specific; the CVE scan below also handles Fort.
+        println!(
+            "\n{}",
+            "[INFO] Running Routinator configuration and permission pre-check..."
+                .bright_blue()
+                .bold()
+        );
+        println!(
+            "{}",
+            "[INFO] Checking Routinator config files; this is not a CVE validation."
+                .bright_cyan()
+        );
+        routinator::validator::validate();
+        println!(
+            "{}",
+            "[INFO] Routinator pre-check finished; review its messages above. CVE triage covers both Routinator and Fort.\n"
+                .bright_blue()
+        );
+        security_scan::scan(nvd_key.as_deref()).await?
+    };
     let warning_count = scan_result.warnings.len();
     for warning in &scan_result.warnings {
         eprintln!("{} {}", "[WARN]".bright_yellow().bold(), warning);
@@ -184,5 +215,31 @@ mod tests {
     fn nvd_api_key_is_only_accepted_from_a_file() {
         assert!(Cli::try_parse_from(["mirak", "--key", "not-a-real-key"]).is_err());
         assert!(Cli::try_parse_from(["mirak", "--key-file", "nvd-key.txt"]).is_ok());
+    }
+
+    #[test]
+    fn inventory_modes_are_mutually_exclusive() {
+        assert!(Cli::try_parse_from(["mirak", "--extract-only", "inventory.json"]).is_ok());
+        assert!(Cli::try_parse_from(["mirak", "--validate-from", "inventory.json"]).is_ok());
+        assert!(
+            Cli::try_parse_from([
+                "mirak",
+                "--extract-only",
+                "inventory.json",
+                "--validate-from",
+                "inventory.json"
+            ])
+            .is_err()
+        );
+        assert!(
+            Cli::try_parse_from([
+                "mirak",
+                "--extract-only",
+                "inventory.json",
+                "--key-file",
+                "nvd-key.txt"
+            ])
+            .is_err()
+        );
     }
 }

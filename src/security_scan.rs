@@ -7,7 +7,7 @@ use std::{
 };
 
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use version_compare::{Cmp, compare};
 
@@ -26,6 +26,7 @@ const ROUTINATOR_ADVISORIES_URL: &str =
     "https://www.nlnetlabs.nl/projects/routinator/security-advisories/";
 const FORT_ADVISORIES_URL: &str = "https://nicmx.github.io/FORT-validator/CVE.html";
 const OSV_QUERY_BATCH_URL: &str = "https://api.osv.dev/v1/querybatch";
+const SCAN_SNAPSHOT_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SecurityFinding {
@@ -57,6 +58,32 @@ struct ValidatorInstall {
     version_source: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct ScanSnapshot {
+    schema_version: u32,
+    installations: Vec<InstallationSnapshot>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct InstallationSnapshot {
+    product: String,
+    version: String,
+    package: PackageSnapshot,
+    deployment: String,
+    version_source: String,
+    #[serde(default)]
+    dependencies: Option<Vec<CrateDependency>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PackageSnapshot {
+    name: String,
+    version: String,
+    distributor: String,
+    source_name: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct VersionRange {
     minimum: Option<String>,
@@ -78,7 +105,7 @@ struct Advisory {
     ranges: Vec<VersionRange>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct CrateDependency {
     name: String,
     version: String,
@@ -106,18 +133,127 @@ struct OsvVulnerability {
 }
 
 pub async fn scan(nvd_key: Option<&str>) -> Result<ScanResult, String> {
+    validate_snapshot(collect_snapshot()?, nvd_key).await
+}
+
+pub fn export_snapshot(path: &Path) -> Result<(usize, Vec<String>), String> {
+    let snapshot = collect_snapshot()?;
+    let installation_count = snapshot.installations.len();
+    let warnings = snapshot.warnings.clone();
+    let contents = serde_json::to_vec_pretty(&snapshot)
+        .map_err(|error| format!("Could not serialize scan snapshot: {error}"))?;
+    fs::write(path, contents)
+        .map_err(|error| format!("Could not write scan snapshot {}: {error}", path.display()))?;
+    Ok((installation_count, warnings))
+}
+
+pub async fn scan_from_snapshot(
+    path: &Path,
+    nvd_key: Option<&str>,
+) -> Result<ScanResult, String> {
+    let contents = fs::read(path)
+        .map_err(|error| format!("Could not read scan snapshot {}: {error}", path.display()))?;
+    let snapshot = serde_json::from_slice(&contents)
+        .map_err(|error| format!("Invalid scan snapshot {}: {error}", path.display()))?;
+    validate_snapshot(snapshot, nvd_key).await
+}
+
+fn collect_snapshot() -> Result<ScanSnapshot, String> {
+    let (installs, mut warnings) = find_validator_installs()?;
+    let mut installations = Vec::with_capacity(installs.len());
+
+    for install in installs {
+        let dependencies = match dependency_inventory(&install) {
+            Ok(Some(packages)) => Some(packages),
+            Ok(None) => {
+                warnings.push(format!(
+                    "Could not determine Rust dependencies for {} {}: no matching Cargo.lock or cargo-auditable metadata was found.",
+                    install.product, install.version
+                ));
+                None
+            }
+            Err(error) => {
+                warnings.push(format!(
+                    "Could not read Rust dependency inventory for {}: {error}",
+                    install.product
+                ));
+                None
+            }
+        };
+
+        installations.push(InstallationSnapshot {
+            product: install.product,
+            version: install.version,
+            package: PackageSnapshot {
+                name: install.package.name,
+                version: install.package.version,
+                distributor: install.package.distributor,
+                source_name: install.package.source_name,
+            },
+            deployment: install.deployment,
+            version_source: install.version_source,
+            dependencies,
+        });
+    }
+
+    Ok(ScanSnapshot {
+        schema_version: SCAN_SNAPSHOT_SCHEMA_VERSION,
+        installations,
+        warnings,
+    })
+}
+
+impl InstallationSnapshot {
+    fn to_install(&self) -> ValidatorInstall {
+        ValidatorInstall {
+            product: self.product.clone(),
+            version: self.version.clone(),
+            binary: None,
+            package: PackageInfo {
+                name: self.package.name.clone(),
+                version: self.package.version.clone(),
+                distributor: self.package.distributor.clone(),
+                source_name: self.package.source_name.clone(),
+                binary_path: None,
+            },
+            deployment: self.deployment.clone(),
+            version_source: self.version_source.clone(),
+        }
+    }
+}
+
+async fn validate_snapshot(
+    snapshot: ScanSnapshot,
+    nvd_key: Option<&str>,
+) -> Result<ScanResult, String> {
+    if snapshot.schema_version != SCAN_SNAPSHOT_SCHEMA_VERSION {
+        return Err(format!(
+            "Unsupported scan snapshot schema version {}; expected {}.",
+            snapshot.schema_version, SCAN_SNAPSHOT_SCHEMA_VERSION
+        ));
+    }
+    if snapshot.installations.is_empty() {
+        return Err("The scan snapshot contains no supported validator installations.".to_string());
+    }
+    if snapshot
+        .installations
+        .iter()
+        .any(|install| !matches!(install.product.as_str(), "routinator" | "fort"))
+    {
+        return Err("The scan snapshot contains an unsupported validator product.".to_string());
+    }
+
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| format!("Could not create HTTP client: {error}"))?;
-
-    let (installs, discovery_warnings) = find_validator_installs()?;
-    if installs.is_empty() {
-        return Err("No Routinator or Fort installation was detected.".to_string());
-    }
-
+    let installs = snapshot
+        .installations
+        .iter()
+        .map(InstallationSnapshot::to_install)
+        .collect::<Vec<_>>();
     let mut result = ScanResult {
-        warnings: discovery_warnings,
+        warnings: snapshot.warnings.clone(),
         ..ScanResult::default()
     };
     let mut findings = Vec::new();
@@ -175,23 +311,15 @@ pub async fn scan(nvd_key: Option<&str>) -> Result<ScanResult, String> {
         }
     }
 
-    let mut dependencies = HashMap::<String, Vec<CrateDependency>>::new();
-    for install in &installs {
-        match dependency_inventory(install) {
-            Ok(Some(packages)) => {
-                dependencies.insert(install.product.clone(), packages);
-            }
-            Ok(None) => result.warnings.push(format!(
-                "Could not determine Rust dependencies for {} {}: no matching Cargo.lock or cargo-auditable metadata was found.",
-                install.product, install.version
-            )),
-            Err(error) => result.warnings.push(format!(
-                "Could not read Rust dependency inventory for {}: {error}",
-                install.product
-            )),
-        }
-    }
-
+    let dependencies = snapshot
+        .installations
+        .iter()
+        .filter_map(|installation| {
+            installation.dependencies.as_ref().map(|packages| {
+                (installation.product.clone(), packages.clone())
+            })
+        })
+        .collect::<Vec<_>>();
     for (product, packages) in dependencies {
         match query_osv(&client, &product, &packages).await {
             Ok(osv_findings) => findings.extend(osv_findings),
@@ -1342,5 +1470,53 @@ mod tests {
         assert!(is_registry_source(Some(&json!("Registry"))));
         assert!(!is_registry_source(Some(&json!("Git"))));
         assert!(!is_registry_source(Some(&json!({"Other": "git"}))));
+    }
+
+    #[test]
+    fn scan_snapshot_preserves_package_and_dependency_inventory() {
+        let snapshot = ScanSnapshot {
+            schema_version: SCAN_SNAPSHOT_SCHEMA_VERSION,
+            installations: vec![InstallationSnapshot {
+                product: "routinator".to_string(),
+                version: "0.15.2".to_string(),
+                package: PackageSnapshot {
+                    name: "routinator".to_string(),
+                    version: "0.15.2-1".to_string(),
+                    distributor: "nlnetlabs".to_string(),
+                    source_name: "routinator".to_string(),
+                },
+                deployment: "host package inventory".to_string(),
+                version_source: "host package inventory".to_string(),
+                dependencies: Some(vec![CrateDependency {
+                    name: "serde".to_string(),
+                    version: "1.0.219".to_string(),
+                }]),
+            }],
+            warnings: vec!["inventory warning".to_string()],
+        };
+        let encoded = serde_json::to_vec(&snapshot).unwrap();
+        let decoded: ScanSnapshot = serde_json::from_slice(&encoded).unwrap();
+
+        assert_eq!(decoded.schema_version, SCAN_SNAPSHOT_SCHEMA_VERSION);
+        assert_eq!(decoded.installations[0].product, "routinator");
+        assert_eq!(decoded.installations[0].package.version, "0.15.2-1");
+        assert_eq!(
+            decoded.installations[0].dependencies.as_ref().unwrap()[0].name,
+            "serde"
+        );
+        assert_eq!(decoded.warnings, vec!["inventory warning".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn scan_snapshot_rejects_unsupported_schema_before_network_access() {
+        let snapshot = ScanSnapshot {
+            schema_version: SCAN_SNAPSHOT_SCHEMA_VERSION + 1,
+            installations: Vec::new(),
+            warnings: Vec::new(),
+        };
+
+        let error = validate_snapshot(snapshot, None).await.unwrap_err();
+
+        assert!(error.contains("Unsupported scan snapshot schema version"));
     }
 }

@@ -125,6 +125,11 @@ MIRAK reports findings only for Routinator, Fort, and dependencies it can
 identify for those validators. It does not scan the operating system or
 unrelated installed applications.
 
+Running `mirak` without flags performs the complete scan on the current host:
+it performs the Routinator configuration and permission pre-check, discovers
+local Routinator and Fort installations, and runs the online advisory and OSV
+checks. Adding `--key-file` keeps this full scan and also enables the NVD check.
+
 Each scan fetches the official [NLnet Labs Routinator advisories](https://www.nlnetlabs.nl/projects/routinator/security-advisories/)
 and [NICMx Fort advisories](https://nicmx.github.io/FORT-validator/CVE.html)
 and checks their affected-version ranges. A version match is reported as an
@@ -146,14 +151,46 @@ binaries. For container images, version matching uses the OCI version label or
 a semantic-version image tag; images without either are skipped with a warning.
 Dependency SBOMs are not extracted from container images.
 
-NVD is an optional supplementary source. Provide `--key-file` to cross-check
-the validators; the API key is read from the specified file and is never
-accepted as a command-line value. No NVD key is required for official
-advisories or OSV. NVD requests are online and are not persistently cached;
-offline analysis is not currently supported.
-On Linux, the key file must be readable by its owner and grant no permissions
-to the group or other users; MIRAK refuses to continue if these permissions
-are unsafe or cannot be checked.
+NVD is an optional supplementary source. Pass the path to a file containing
+the API key with `--key-file`; the key itself is not passed as a command-line
+value. For example:
+
+```
+mirak --key-file nvd-key.txt
+```
+
+No NVD key is required for official advisories or OSV. NVD requests are online
+and are not persistently cached; fully offline CVE validation is not supported.
+For a restricted host, use the split extraction and online validation workflow
+below. On Linux, restrict the key file to its owner, for example with
+`chmod 600 nvd-key.txt`. MIRAK refuses to continue if the file permissions are
+unsafe or cannot be checked.
+
+#### Split inventory extraction and CVE validation
+
+For a host that cannot access the online advisory services, extract its validator
+and dependency inventory without running CVE queries:
+
+```
+mirak --extract-only inventory.json
+```
+
+Transfer `inventory.json` to a machine with internet access and validate that
+snapshot there:
+
+```
+mirak --validate-from inventory.json
+mirak --validate-from inventory.json --key-file nvd-key.txt
+```
+
+The snapshot contains detected validator versions, package identity, and any
+dependency inventory MIRAK could collect. It does not contain an NVD API key.
+Validation uses the captured host inventory, not the validator machine's local
+software, and performs the usual online advisory and OSV checks; the NVD check
+is also performed when a key file is supplied. This mode does not run the
+Routinator configuration and permission pre-check because it validates the
+captured inventory rather than the local validator installation. The two
+snapshot modes are mutually exclusive.
 
 The CSV report includes the source, affected product and version, match status,
 advisory URL, and evidence. CVEs are not treated as confirmed exploitable
