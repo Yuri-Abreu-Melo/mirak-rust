@@ -12,7 +12,7 @@ EXTRA_PKGS="${EXTRA_PKGS:-}"
 
 # ---- Base packages ----
 eval "$PKG_UPDATE"
-eval "$PKG_INSTALL $DEVEL_PKGS $EXTRA_PKGS"
+eval "$PKG_INSTALL $DEVEL_PKGS $EXTRA_PKGS jq"
 
 # Explicit guarantee: git and gnupg must exist before clone/gpg
 if command -v apt >/dev/null 2>&1; then
