@@ -252,6 +252,12 @@ async fn validate_snapshot(
         .iter()
         .map(InstallationSnapshot::to_install)
         .collect::<Vec<_>>();
+    for install in &installs {
+        println!(
+            "[INFO] Detected {} {} at {} (version source: {}).",
+            install.product, install.version, install.deployment, install.version_source
+        );
+    }
     let mut result = ScanResult {
         warnings: snapshot.warnings.clone(),
         ..ScanResult::default()
@@ -469,12 +475,22 @@ fn find_validator_installs() -> Result<(Vec<ValidatorInstall>, Vec<String>), Str
         });
     }
 
-    if !installs.iter().any(|install| install.product == "fort") {
-        match find_fort_binary_install() {
-            Ok(Some(install)) => installs.push(install),
-            Ok(None) => {}
-            Err(warning) => warnings.push(warning),
+    match find_fort_binary_install() {
+        Ok(Some(install)) => {
+            println!(
+                "[INFO] Fort executable probe found {} reporting version {}.",
+                install
+                    .binary
+                    .as_deref()
+                    .map_or_else(|| "<unknown>".to_string(), |path| path.display().to_string()),
+                install.version
+            );
+            merge_fort_binary_install(&mut installs, install);
         }
+        Ok(None) => println!(
+            "[INFO] Fort executable probe found no fort or fort-validator in PATH or standard install locations."
+        ),
+        Err(warning) => warnings.push(warning),
     }
 
     let (container_installs, container_warnings) = find_container_installs();
@@ -494,8 +510,33 @@ fn find_validator_installs() -> Result<(Vec<ValidatorInstall>, Vec<String>), Str
     Ok((installs, warnings))
 }
 
+fn merge_fort_binary_install(
+    installs: &mut Vec<ValidatorInstall>,
+    binary_install: ValidatorInstall,
+) {
+    let binary_path = binary_install.binary.clone();
+    let mut matched_package = false;
+    for install in installs.iter_mut().filter(|install| {
+        install.product == "fort" && install.binary == binary_path
+    }) {
+        install.version = binary_install.version.clone();
+        install.package.version = binary_install.package.version.clone();
+        install.version_source = binary_install.version_source.clone();
+        matched_package = true;
+    }
+
+    if !matched_package {
+        installs.push(binary_install);
+    }
+}
+
 fn find_fort_binary_install() -> Result<Option<ValidatorInstall>, String> {
-    let Some(binary) = find_executable(&["fort", "fort-validator"]) else {
+    let standard_binary = Path::new("/usr/local/bin/fort");
+    let binary = standard_binary
+        .is_file()
+        .then(|| standard_binary.to_path_buf())
+        .or_else(|| find_executable(&["fort", "fort-validator"]));
+    let Some(binary) = binary else {
         return Ok(None);
     };
     let output = Command::new(&binary)
@@ -507,14 +548,6 @@ fn find_fort_binary_install() -> Result<Option<ValidatorInstall>, String> {
                 binary.display()
             )
         })?;
-    if !output.status.success() {
-        return Err(format!(
-            "Could not determine Fort version from {}: {}",
-            binary.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-
     let version_output = format!(
         "{}\n{}",
         String::from_utf8_lossy(&output.stdout),
@@ -522,8 +555,10 @@ fn find_fort_binary_install() -> Result<Option<ValidatorInstall>, String> {
     );
     let Some(version) = parse_fort_version(&version_output) else {
         return Err(format!(
-            "Could not parse Fort version reported by {}.",
-            binary.display()
+            "Could not parse Fort version reported by {} (exit status: {}). Output: {}",
+            binary.display(),
+            output.status,
+            version_output.trim()
         ));
     };
 
@@ -570,15 +605,18 @@ fn products_match(left: &str, right: &str) -> bool {
 }
 
 fn find_executable(names: &[&str]) -> Option<PathBuf> {
-    let mut directories = vec![
-        PathBuf::from("/usr/bin"),
+    let mut directories = env::var_os("PATH")
+        .map(|path| env::split_paths(&path).collect::<Vec<_>>())
+        .unwrap_or_default();
+    directories.extend([
         PathBuf::from("/usr/local/bin"),
         PathBuf::from("/usr/local/sbin"),
+        PathBuf::from("/usr/bin"),
         PathBuf::from("/bin"),
         PathBuf::from("/usr/sbin"),
         PathBuf::from("/sbin"),
         PathBuf::from("/opt/routinator/bin"),
-    ];
+    ]);
     if let Ok(entries) = fs::read_dir("/opt") {
         directories.extend(entries.flatten().filter_map(|entry| {
             entry
@@ -587,9 +625,6 @@ fn find_executable(names: &[&str]) -> Option<PathBuf> {
                 .filter(|file_type| file_type.is_dir())
                 .map(|_| entry.path().join("bin"))
         }));
-    }
-    if let Some(path) = env::var_os("PATH") {
-        directories.extend(env::split_paths(&path));
     }
     if let Some(cargo_home) = env::var_os("CARGO_HOME") {
         directories.push(PathBuf::from(cargo_home).join("bin"));
@@ -1123,6 +1158,15 @@ async fn fetch_routinator_advisories(client: &reqwest::Client) -> Result<Vec<Adv
 
 async fn fetch_fort_advisories(client: &reqwest::Client) -> Result<Vec<Advisory>, String> {
     let html = fetch_text(client, FORT_ADVISORIES_URL, "Fort advisory page").await?;
+    let advisories = parse_fort_advisories(&html)?;
+    println!(
+        "[INFO] Parsed {} Fort advisories with affected-version ranges.",
+        advisories.len()
+    );
+    Ok(advisories)
+}
+
+fn parse_fort_advisories(html: &str) -> Result<Vec<Advisory>, String> {
     let heading_regex = Regex::new(r"(?is)<h[1-6]\b[^>]*>\s*(CVE-\d{4}-\d+)\s*</h[1-6]>")
         .map_err(|error| error.to_string())?;
     let headings = heading_regex
@@ -1464,6 +1508,46 @@ mod tests {
     }
 
     #[test]
+    fn fort_binary_version_overrides_stale_package_version() {
+        let fort_binary = PathBuf::from("/usr/local/bin/fort");
+        let mut installs = vec![ValidatorInstall {
+            product: "fort".to_string(),
+            version: "1.7.0.experimental".to_string(),
+            binary: Some(fort_binary.clone()),
+            package: PackageInfo {
+                name: "fort".to_string(),
+                version: "1.7.0.experimental".to_string(),
+                distributor: "nicmx".to_string(),
+                source_name: "fort".to_string(),
+                binary_path: None,
+            },
+            deployment: format!("host binary {}", fort_binary.display()),
+            version_source: "host package inventory".to_string(),
+        }];
+        let detected_binary_install = ValidatorInstall {
+            product: "fort".to_string(),
+            version: "1.6.2".to_string(),
+            binary: Some(fort_binary.clone()),
+            package: PackageInfo {
+                name: "fort".to_string(),
+                version: "1.6.2".to_string(),
+                distributor: "nicmx".to_string(),
+                source_name: "fort".to_string(),
+                binary_path: Some(fort_binary),
+            },
+            deployment: "host binary /usr/local/bin/fort".to_string(),
+            version_source: "fort -V".to_string(),
+        };
+
+        merge_fort_binary_install(&mut installs, detected_binary_install);
+
+        assert_eq!(installs.len(), 1);
+        assert_eq!(installs[0].version, "1.6.2");
+        assert_eq!(installs[0].package.version, "1.6.2");
+        assert_eq!(installs[0].version_source, "fort -V");
+    }
+
+    #[test]
     fn routinator_advisory_uses_link_id_and_matches_fixed_version_boundary() {
         let advisory = parse_routinator_advisory(
             "CVE-2023-39916",
@@ -1541,6 +1625,54 @@ mod tests {
         );
         assert!(advisory.ranges.iter().any(|range| range.matches("1.6.2")));
         assert!(!advisory.ranges.iter().any(|range| range.matches("1.6.3")));
+    }
+
+    #[test]
+    fn fort_html_advisory_sections_match_version_1_6_2() {
+        let html = r#"
+            <h2 id="cve-2024-45238">CVE-2024-45238</h2>
+            <p>Certificate parsing crashes Fort 1.6.2-, when compiled with OpenSSL &lt; 3.</p>
+            <table><tr><td>Patch</td><td>Released in Fort 1.6.3.</td></tr></table>
+            <h2 id="cve-2024-45237">CVE-2024-45237</h2>
+            <p>Key Usage handling crashes Fort 1.6.2-.</p>
+            <table><tr><td>Patch</td><td>Released in Fort 1.6.3.</td></tr></table>
+            <h2 id="cve-2024-45235">CVE-2024-45235</h2>
+            <p>Authority Key Identifier handling crashes Fort 1.6.2-.</p>
+            <table><tr><td>Patch</td><td>Released in Fort 1.6.3.</td></tr></table>
+            <h2 id="cve-2024-45236">CVE-2024-45236</h2>
+            <p>Empty signedAttrs crashes Fort 1.6.2-.</p>
+            <table><tr><td>Patch</td><td>Released in Fort 1.6.3.</td></tr></table>
+            <h2 id="cve-2024-45239">CVE-2024-45239</h2>
+            <p>Null eContent crashes Fort 1.6.2-.</p>
+            <table><tr><td>Patch</td><td>Released in Fort 1.6.3.</td></tr></table>
+            <h2 id="cve-2024-45234">CVE-2024-45234</h2>
+            <p>Non-canonical signedAttrs crashes Fort 1.6.2-.</p>
+            <table><tr><td>Patch</td><td>Released in Fort 1.6.3.</td></tr></table>
+            <h2 id="cve-2024-56375">CVE-2024-56375</h2>
+            <p>Empty fileList crashes Fort 1.6.3, 1.6.4.</p>
+            <table><tr><td>Patch</td><td>Released in Fort 1.6.5.</td></tr></table>
+        "#;
+
+        let advisories = parse_fort_advisories(html).unwrap();
+        let matched = advisories
+            .iter()
+            .filter(|advisory| {
+                advisory
+                    .ranges
+                    .iter()
+                    .any(|range| range.matches("1.6.2"))
+            })
+            .map(|advisory| advisory.id.as_str())
+            .collect::<HashSet<_>>();
+
+        assert_eq!(matched.len(), 6);
+        assert!(matched.contains("CVE-2024-45238"));
+        assert!(matched.contains("CVE-2024-45237"));
+        assert!(matched.contains("CVE-2024-45235"));
+        assert!(matched.contains("CVE-2024-45236"));
+        assert!(matched.contains("CVE-2024-45239"));
+        assert!(matched.contains("CVE-2024-45234"));
+        assert!(!matched.contains("CVE-2024-56375"));
     }
 
     #[test]
