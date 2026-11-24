@@ -469,6 +469,14 @@ fn find_validator_installs() -> Result<(Vec<ValidatorInstall>, Vec<String>), Str
         });
     }
 
+    if !installs.iter().any(|install| install.product == "fort") {
+        match find_fort_binary_install() {
+            Ok(Some(install)) => installs.push(install),
+            Ok(None) => {}
+            Err(warning) => warnings.push(warning),
+        }
+    }
+
     let (container_installs, container_warnings) = find_container_installs();
     installs.extend(container_installs);
     warnings.extend(container_warnings);
@@ -484,6 +492,64 @@ fn find_validator_installs() -> Result<(Vec<ValidatorInstall>, Vec<String>), Str
         ));
     }
     Ok((installs, warnings))
+}
+
+fn find_fort_binary_install() -> Result<Option<ValidatorInstall>, String> {
+    let Some(binary) = find_executable(&["fort", "fort-validator"]) else {
+        return Ok(None);
+    };
+    let output = Command::new(&binary)
+        .arg("-V")
+        .output()
+        .map_err(|error| {
+            format!(
+                "Could not determine Fort version from {}: {error}",
+                binary.display()
+            )
+        })?;
+    if !output.status.success() {
+        return Err(format!(
+            "Could not determine Fort version from {}: {}",
+            binary.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let version_output = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let Some(version) = parse_fort_version(&version_output) else {
+        return Err(format!(
+            "Could not parse Fort version reported by {}.",
+            binary.display()
+        ));
+    };
+
+    Ok(Some(ValidatorInstall {
+        product: "fort".to_string(),
+        version: version.clone(),
+        binary: Some(binary.clone()),
+        package: PackageInfo {
+            name: "fort".to_string(),
+            version,
+            distributor: "nicmx".to_string(),
+            source_name: "fort".to_string(),
+            binary_path: Some(binary.clone()),
+        },
+        deployment: format!("host binary {}", binary.display()),
+        version_source: "fort -V".to_string(),
+    }))
+}
+
+fn parse_fort_version(output: &str) -> Option<String> {
+    let version_regex =
+        Regex::new(r"(?im)^\s*fort\s+([0-9]+(?:\.[0-9]+)+(?:[.-][0-9A-Za-z.-]+)?)").ok()?;
+    version_regex
+        .captures(output)
+        .and_then(|capture| capture.get(1))
+        .map(|value| value.as_str().to_string())
 }
 
 fn products_match(left: &str, right: &str) -> bool {
@@ -1383,6 +1449,19 @@ fn merge_findings(findings: Vec<SecurityFinding>) -> Vec<SecurityFinding> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_fort_version_reported_by_binary() {
+        assert_eq!(
+            parse_fort_version("fort 1.6.2\n"),
+            Some("1.6.2".to_string())
+        );
+        assert_eq!(
+            parse_fort_version("fort 1.7.0.experimental\n"),
+            Some("1.7.0.experimental".to_string())
+        );
+        assert_eq!(parse_fort_version("not a version"), None);
+    }
 
     #[test]
     fn routinator_advisory_uses_link_id_and_matches_fixed_version_boundary() {

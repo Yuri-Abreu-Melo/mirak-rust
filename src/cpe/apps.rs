@@ -25,6 +25,11 @@ fn clean_cpe_carachters(text: &str) -> String {
     regex.replace_all(text, "").to_string()
 }
 
+fn clean_package_name(text: &str) -> String {
+    let name = text.split_once(':').map_or(text, |(name, _)| name);
+    clean_cpe_carachters(name)
+}
+
 pub fn find_routinator_by_cargo() -> (Vec<PackageInfo>, Vec<String>) {
     let mut packages = Vec::new();
     let mut warnings = Vec::new();
@@ -130,7 +135,7 @@ pub fn find_installed_apps(pkg_manager: PackageManager) -> Option<Vec<PackageInf
                 if parts.len() < 5 {
                     return None;
                 }
-                let name = clean_cpe_carachters(parts[0]);
+                let name = clean_package_name(parts[0]);
                 let version = clean_cpe_carachters(parts[2]);
                 let source_raw = parts[4];
 
@@ -242,7 +247,13 @@ pub fn normalize_version(version: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_version;
+    use super::{clean_package_name, normalize_version};
+
+    #[test]
+    fn clean_package_name_removes_debian_architecture_qualifier() {
+        assert_eq!(clean_package_name("fort:amd64"), "fort");
+        assert_eq!(clean_package_name("fort-validator:amd64"), "fort-validator");
+    }
 
     #[test]
     fn normalize_version_removes_package_epoch_and_release_suffix() {
