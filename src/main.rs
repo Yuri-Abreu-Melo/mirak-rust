@@ -158,11 +158,7 @@ async fn validate(cli: &Cli) -> Result<(), String> {
             .bright_blue()
             .bold()
     );
-    if scan_result.findings.is_empty() {
-        println!(
-            "No possible matches were found in the sources checked; this does not prove that the system is vulnerability-free."
-        );
-    } else {
+    if !scan_result.findings.is_empty() {
         for finding in &scan_result.findings {
             println!(
                 "[MATCH] {} | {} {} | {} | {}",

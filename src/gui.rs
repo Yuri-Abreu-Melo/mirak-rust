@@ -142,9 +142,7 @@ pub fn build_ui(app: &Application) {
                                 "\n[SUMMARY] {} possible match(es) for supported validators/dependencies\n",
                                 scan_result.findings.len()
                             ));
-                            if scan_result.findings.is_empty() {
-                                log("No possible matches were found in the sources checked; this does not prove that the system is vulnerability-free.\n");
-                            } else {
+                            if !scan_result.findings.is_empty() {
                                 for finding in &scan_result.findings {
                                     log(&format!(
                                         "[MATCH] {} | {} {} | {} | {}\n",
