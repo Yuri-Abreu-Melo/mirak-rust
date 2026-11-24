@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e
+export DEBIAN_FRONTEND=noninteractive
 
 # ---- Load box data from environment ----
 BOX_NAME="${BOX_NAME:-}"

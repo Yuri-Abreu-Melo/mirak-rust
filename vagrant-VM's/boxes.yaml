@@ -13,7 +13,7 @@ fedora:
 debian:
   box: 'cloud-image/debian-13'
   box_version: ''
-  pkg_update: 'apt update && apt full-upgrade -y'
+  pkg_update: 'apt update'
   pkg_install: 'apt install -y'
   devel_pkgs: 'curl git build-essential sudo wget apt-transport-https ca-certificates gnupg lsb-release'
   sudo_group: 'sudo'
@@ -25,7 +25,7 @@ debian:
 debian12:
   box: 'debian/bookworm64'
   box_version: ''
-  pkg_update: 'apt update && apt full-upgrade -y'
+  pkg_update: 'apt update'
   pkg_install: 'apt install -y'
   devel_pkgs: 'curl git build-essential sudo wget apt-transport-https ca-certificates gnupg lsb-release'
   sudo_group: 'sudo'
@@ -37,7 +37,7 @@ debian12:
 ubuntu:
   box: 'ubuntu/jammy64'
   box_version: '20241002.0.0'
-  pkg_update: 'apt update && apt full-upgrade -y'
+  pkg_update: 'apt update'
   pkg_install: 'apt install -y'
   devel_pkgs: 'curl git build-essential wget apt-transport-https ca-certificates software-properties-common gnupg lsb-release'
   sudo_group: 'sudo'

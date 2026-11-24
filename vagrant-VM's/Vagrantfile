@@ -36,13 +36,17 @@ Vagrant.configure('2') do |config|
         'FORT_VERSION' => opts['fort_version'].to_s
       }
 
-      vm.vm.provision 'shell', path: 'provision-user.sh', env: env_vars
+      vm.vm.provision 'shell', path: 'provision-user.sh', privileged: true, env: env_vars
       vm.vm.provision 'shell', path: 'provision-root.sh', privileged: true, env: env_vars
 
       vm.vm.provision 'shell', privileged: false, inline: <<-SHELL
         echo "routinator: $(command -v routinator || echo missing) $(routinator -V 2>/dev/null || true)"
         echo "fort: $(command -v fort || echo missing) $(fort -V 2>/dev/null || true)"
-        echo "vuls: $(command -v vuls || echo missing)"
+        if ! command -v vuls >/dev/null 2>&1; then
+          echo "ERROR: vuls is not available to the vagrant user."
+          exit 1
+        fi
+        echo "vuls: $(command -v vuls)"
       SHELL
     end
   end

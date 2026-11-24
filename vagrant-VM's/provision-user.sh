@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -e
+export DEBIAN_FRONTEND=noninteractive
 
 # ---- Load box data from environment ----
 BOX_NAME="${BOX_NAME:-}"
@@ -88,7 +89,7 @@ if [ -z "$VULS_BIN" ]; then
   exit 1
 fi
 echo "Vuls binary found at: $VULS_BIN"
-ln -sf "$VULS_BIN" /usr/local/bin/vuls
+install -m 0755 "$VULS_BIN" /usr/local/bin/vuls
 /usr/local/bin/vuls -v || true
 
 mkdir -p /opt/vuls/config /opt/vuls/results
