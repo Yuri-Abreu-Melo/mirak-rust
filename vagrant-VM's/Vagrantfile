@@ -3,206 +3,46 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
-BOXES = {
-  fedora: {
-    box: 'cloud-image/fedora-43',
-    box_version: nil,
-    pkg_update: 'dnf upgrade -y',
-    pkg_install: 'dnf install -y',
-    devel_pkgs: 'curl git gcc gcc-c++ make wget ca-certificates',
-    sudo_group: 'wheel',
-    extra_pkgs: 'bc sysstat psmisc',
-    go_arch: 'linux-amd64'
-  },
-  debian: {
-    box: 'cloud-image/debian-13',
-    box_version: nil,
-    pkg_update: 'apt update && apt full-upgrade -y',
-    pkg_install: 'apt install -y',
-    devel_pkgs: 'curl git build-essential sudo wget apt-transport-https ca-certificates software-properties-common gnupg lsb-release',
-    sudo_group: 'sudo',
-    extra_pkgs: 'bc sysstat psmisc',
-    go_arch: 'linux-amd64'
-  },
-  ubuntu: {
-    box: 'ubuntu/jammy64',
-    box_version: '20241002.0.0',
-    pkg_update: 'apt update && apt full-upgrade -y',
-    pkg_install: 'apt install -y',
-    devel_pkgs: 'curl git build-essential wget apt-transport-https ca-certificates software-properties-common gnupg lsb-release',
-    sudo_group: 'sudo',
-    extra_pkgs: '',
-    go_arch: 'linux-amd64'
-  }
-}
+require 'yaml'
+
+BOXES = YAML.load_file(File.join(__dir__, 'boxes.yaml'))
 
 Vagrant.configure('2') do |config|
   config.vm.synced_folder '.', '/vagrant', type: 'virtualbox'
+  config.vm.boot_timeout = 600
 
   BOXES.each do |name, opts|
     config.vm.define name do |vm|
-      vm.vm.box = opts[:box]
-      vm.vm.box_version = opts[:box_version] if opts[:box_version]
+      vm.vm.box = opts['box']
+      vm.vm.box_version = opts['box_version'] unless opts['box_version'].to_s.empty?
       vm.vm.network 'public_network'
+      vm.vm.network 'forwarded_port', guest: 22, host: 2222, id: 'ssh', auto_correct: true
+      vm.vm.disk :disk, size: '40GB', primary: true
 
       vm.vm.provider 'virtualbox' do |vb|
-        vb.memory = '2048'
+        vb.memory = '4096'
         vb.cpus = 2
       end
 
-      vm.vm.provision 'shell', inline: <<~SHELL
-        #{opts[:pkg_update]}
-        #{opts[:pkg_install]} #{opts[:devel_pkgs]} #{opts[:extra_pkgs]}
-        usermod -aG #{opts[:sudo_group]} vagrant
-        id vagrant
+      env_vars = {
+        'BOX_NAME' => name.to_s,
+        'PKG_UPDATE' => opts['pkg_update'].to_s,
+        'PKG_INSTALL' => opts['pkg_install'].to_s,
+        'DEVEL_PKGS' => opts['devel_pkgs'].to_s,
+        'SUDO_GROUP' => opts['sudo_group'].to_s,
+        'EXTRA_PKGS' => opts['extra_pkgs'].to_s,
+        'ROUTINATOR_VERSION' => opts['routinator_version'].to_s,
+        'FORT_BUILD_FROM_SOURCE' => opts['fort_build_from_source'].to_s,
+        'FORT_VERSION' => opts['fort_version'].to_s
+      }
 
-        if [ -d /vagrant/mirak-app ]; then
-          rm -rf /home/vagrant/mirak-app
-          ln -sfn /vagrant/mirak-app /home/vagrant/mirak-app
-          chown -h vagrant:vagrant /home/vagrant/mirak-app || true
-          chmod +x /vagrant/mirak-app/* 2>/dev/null || true
-        else
-          echo "Warning: /vagrant/mirak-app folder not found. Skipping symlink."
-        fi
-
-        if [ -f /vagrant/benchmark_script.sh ]; then
-          ln -sfn /vagrant/benchmark_script.sh /home/vagrant/benchmark_script.sh
-          chown -h vagrant:vagrant /home/vagrant/benchmark_script.sh || true
-          chmod +x /home/vagrant/benchmark_script.sh
-        else
-          echo "Warning: /vagrant/benchmark_script.sh not found. Skipping symlink."
-        fi
-
-        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
-        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
-
-        wget -q https://go.dev/dl/go1.26.2.linux-amd64.tar.gz
-        tar -C /usr/local -xzf go1.26.2.linux-amd64.tar.gz
-        rm go1.26.2.linux-amd64.tar.gz
-        echo 'export PATH=$PATH:/usr/local/go/bin' > /etc/profile.d/go.sh
-        export PATH=$PATH:/usr/local/go/bin
-
-        #{opts[:pkg_install]} sqlite3 gcc make
-
-        cd /opt
-        git clone --depth=1 https://github.com/future-architect/vuls.git
-        cd vuls
-        make install
-        ln -sf /root/go/bin/vuls /usr/local/bin/vuls
-        mkdir -p /opt/vuls/config /opt/vuls/results
-        chmod -R 755 /opt/vuls
-
-        cat > /home/vagrant/config.toml << 'EOF'
-        [servers]
-
-        [servers.localhost]
-        host = "localhost"
-        port = "local"
-        EOF
-
-        chown vagrant:vagrant /home/vagrant/config.toml
-        cd /
-      SHELL
-
-      vm.vm.provision 'shell', privileged: true, inline: <<~SHELL
-        if command -v dnf >/dev/null 2>&1; then
-          dnf install -y routinator || true
-        elif command -v apt >/dev/null 2>&1; then
-          DISTRO_ID=$(. /etc/os-release && echo "$ID")
-          CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
-          if [ "$DISTRO_ID" = "debian" ]; then
-            REPO_BASE="debian"
-          else
-            REPO_BASE="ubuntu"
-          fi
-          curl -fsSL https://packages.nlnetlabs.nl/aptkey.asc | gpg --dearmor -o /usr/share/keyrings/nlnetlabs-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/nlnetlabs-archive-keyring.gpg] https://packages.nlnetlabs.nl/linux/${REPO_BASE} ${CODENAME} main" | tee /etc/apt/sources.list.d/nlnetlabs.list > /dev/null
-          apt update
-          apt install -y routinator
-        fi
-
-        systemctl enable --now routinator || true
-        systemctl status routinator --no-pager || true
-
-        if command -v apt >/dev/null 2>&1; then
-          wget -q -O /tmp/fort.deb https://github.com/NICMx/FORT-validator/releases/download/1.7.0.experimental/fort_1.7.0.experimental-1_amd64.deb
-          apt install -y /tmp/fort.deb
-          rm -f /tmp/fort.deb
-        elif command -v dnf >/dev/null 2>&1; then
-          wget -q -O /tmp/fort.rpm https://github.com/NICMx/FORT-validator/releases/download/1.7.0.experimental/fort-1.7.0.experimental-1.el9.x86_64.rpm
-          dnf install -y /tmp/fort.rpm
-          rm -f /tmp/fort.rpm
-        else
-          echo "Error: no supported package manager found for the Fort package."
-          exit 1
-        fi
-
-        FORT_BIN="$(command -v fort || command -v fort-validator || true)"
-        if [ -z "$FORT_BIN" ]; then
-          echo "Error: Fort package installed but its executable was not found."
-          exit 1
-        fi
-
-        getent passwd fort || useradd --system --home-dir /var/lib/fort --create-home --shell /usr/sbin/nologin fort
-        install -d -o root -g fort -m 0750 /etc/fort
-        install -d -o fort -g fort -m 0750 /etc/fort/tal
-        install -d -o fort -g fort -m 0750 /var/lib/fort/repository
-        install -d -o fort -g fort -m 0750 /var/lib/fort/output
-
-        sudo -u fort "$FORT_BIN" --init-tals --tal /etc/fort/tal
-
-        cat > /etc/fort/config.json << 'EOF'
-        {
-          "mode": "server",
-          "tal": "/etc/fort/tal",
-          "local-repository": "/var/lib/fort/repository",
-          "output": {
-            "roa": "/var/lib/fort/output/validated-roas.csv"
-          },
-          "server": {
-            "address": ["127.0.0.1", "::1"],
-            "port": "8323",
-            "max-rtr-version": 1,
-            "interval": {
-              "validation": 3600,
-              "refresh": 3600,
-              "retry": 600,
-              "expire": 7200
-            }
-          },
-          "log": {
-            "output": "console",
-            "level": "info"
-          }
-        }
-        EOF
-        chown root:fort /etc/fort/config.json
-        chmod 0640 /etc/fort/config.json
-
-        cat > /etc/systemd/system/fort.service << EOF
-        [Unit]
-        Description=FORT RPKI Validator
-        After=network.target
-
-        [Service]
-        Type=simple
-        User=fort
-        Group=fort
-        ExecStart=${FORT_BIN} --configuration-file /etc/fort/config.json
-        Restart=on-failure
-
-        [Install]
-        WantedBy=multi-user.target
-        EOF
-        systemctl daemon-reload
-        systemctl enable --now fort || true
-        systemctl status fort --no-pager || true
-      SHELL
+      vm.vm.provision 'shell', path: 'provision-user.sh', env: env_vars
+      vm.vm.provision 'shell', path: 'provision-root.sh', privileged: true, env: env_vars
 
       vm.vm.provision 'shell', privileged: false, inline: <<-SHELL
-        echo 'export PATH=$HOME/.cargo/bin:$PATH' >> $HOME/.bashrc
-        echo "routinator: $(command -v routinator || echo missing)"
-        echo "fort: $(command -v fort || echo missing)"
+        echo "routinator: $(command -v routinator || echo missing) $(routinator -V 2>/dev/null || true)"
+        echo "fort: $(command -v fort || echo missing) $(fort -V 2>/dev/null || true)"
+        echo "vuls: $(command -v vuls || echo missing)"
       SHELL
     end
   end
